@@ -1,26 +1,26 @@
-import { STAGES } from '../constants/stages'
+import { STAGES, cumulativeMetrics } from '../constants/stages'
 
 /**
- * KPI cards — conversion-rate first.
- * The BIG number on each card is the conversion rate from the previous
- * stage; the lead count is demoted to the small sub-line.
- * The first stage (Awareness) has no previous stage, so it shows its
- * share of total leads instead.
+ * KPI cards — conversion-rate first, cumulative funnel counts.
+ * Counts are "reached this stage" (own stage + all later stages), so a
+ * lead in Acquisition also counts toward Awareness. This keeps the cards
+ * consistent with the funnel chart: the top stage is always 100%.
  */
 export default function KPICards({ metrics, loading }) {
-  const total = metrics?.total ?? 0
+  const cum = cumulativeMetrics(metrics)
 
   return (
     <div className="kpi-grid" style={{ '--kpi-cols': 6 }}>
       {STAGES.map((stage, i) => {
-        const count     = metrics?.[stage.key] ?? 0
+        const count     = cum[stage.key] ?? 0
         const prevStage = i === 0 ? null : STAGES[i - 1]
-        const prevCount = prevStage ? (metrics?.[prevStage.key] ?? 0) : null
+        const prevCount = prevStage ? (cum[prevStage.key] ?? 0) : null
 
-        // First card: % of all leads. Others: conversion from previous stage.
+        // First card: everyone enters the funnel → 100%.
+        // Others: conversion from previous stage (cumulative).
         const pct = prevStage
           ? (prevCount > 0 ? (count / prevCount) * 100 : null)
-          : (total > 0 ? (count / total) * 100 : null)
+          : 100
 
         const pctColor = pct === null
           ? 'var(--fg-3)'
@@ -41,10 +41,10 @@ export default function KPICards({ metrics, loading }) {
             </div>
             <div className="kpi-conversion">
               <span style={{ fontWeight: 600, color: 'var(--fg-2)' }}>
-                {loading ? '—' : count.toLocaleString()} leads
+                {loading ? '—' : count.toLocaleString()} reached
               </span>
               <span>
-                {prevStage ? `from ${prevStage.label.toLowerCase()}` : 'of total'}
+                {prevStage ? `from ${prevStage.label.toLowerCase()}` : 'top of funnel'}
               </span>
             </div>
           </div>
