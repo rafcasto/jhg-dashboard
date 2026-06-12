@@ -1,12 +1,30 @@
 import { STAGES } from '../constants/stages'
 
+/**
+ * KPI cards — conversion-rate first.
+ * The BIG number on each card is the conversion rate from the previous
+ * stage; the lead count is demoted to the small sub-line.
+ * The first stage (Awareness) has no previous stage, so it shows its
+ * share of total leads instead.
+ */
 export default function KPICards({ metrics, loading }) {
+  const total = metrics?.total ?? 0
+
   return (
     <div className="kpi-grid" style={{ '--kpi-cols': 6 }}>
       {STAGES.map((stage, i) => {
         const count     = metrics?.[stage.key] ?? 0
-        const prevCount = i === 0 ? null : (metrics?.[STAGES[i - 1].key] ?? 0)
-        const convPct   = prevCount > 0 ? Math.round((count / prevCount) * 100) : null
+        const prevStage = i === 0 ? null : STAGES[i - 1]
+        const prevCount = prevStage ? (metrics?.[prevStage.key] ?? 0) : null
+
+        // First card: % of all leads. Others: conversion from previous stage.
+        const pct = prevStage
+          ? (prevCount > 0 ? (count / prevCount) * 100 : null)
+          : (total > 0 ? (count / total) * 100 : null)
+
+        const pctColor = pct === null
+          ? 'var(--fg-3)'
+          : pct < 20 ? '#dc2626' : pct < 50 ? '#f08a1c' : '#22c55e'
 
         return (
           <div
@@ -16,21 +34,18 @@ export default function KPICards({ metrics, loading }) {
           >
             <div className="kpi-emoji">{stage.emoji}</div>
             <div className="kpi-label">{stage.label}</div>
-            <div className="kpi-value">
-              {loading ? '—' : count.toLocaleString()}
+            <div className="kpi-value" style={{ color: pctColor }}>
+              {loading
+                ? '—'
+                : pct === null ? 'n/a' : `${pct.toFixed(1)}%`}
             </div>
             <div className="kpi-conversion">
-              {convPct !== null ? (
-                <>
-                  <span className="kpi-conversion-rate"
-                    style={{ color: convPct < 20 ? '#dc2626' : convPct < 50 ? '#f08a1c' : '#22c55e' }}>
-                    {convPct}%
-                  </span>
-                  <span>from {STAGES[i - 1].label.toLowerCase()}</span>
-                </>
-              ) : (
-                <span style={{ fontSize: 11, lineHeight: 1.3 }}>{stage.question}</span>
-              )}
+              <span style={{ fontWeight: 600, color: 'var(--fg-2)' }}>
+                {loading ? '—' : count.toLocaleString()} leads
+              </span>
+              <span>
+                {prevStage ? `from ${prevStage.label.toLowerCase()}` : 'of total'}
+              </span>
             </div>
           </div>
         )

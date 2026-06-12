@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 const STAGE_COLORS = {
+  awareness:   '#7a1ec2',
   acquisition: '#0033cc',
   activation:  '#6bbf6b',
   retention:   '#f5d000',
@@ -9,7 +10,7 @@ const STAGE_COLORS = {
 }
 
 const COLUMNS = [
-  { key: 'name',       label: 'Name',     sortable: true  },
+  { key: 'full_name',  label: 'Name',     sortable: true  },
   { key: 'email',      label: 'Email',    sortable: true  },
   { key: 'stage',      label: 'Stage',    sortable: true  },
   { key: 'source',     label: 'Source',   sortable: true  },
@@ -23,6 +24,13 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' })
 }
 
+/** Concatenate first + last name, tolerating nulls/blanks on either side */
+export function fullName(lead) {
+  return [lead.first_name, lead.last_name]
+    .filter(v => v && String(v).trim())
+    .join(' ')
+}
+
 export default function LeadsTable({ rows, total, page, totalPages, setPage, loading }) {
   const [sortKey, setSortKey]   = useState('created_at')
   const [sortDir, setSortDir]   = useState('desc')
@@ -32,7 +40,9 @@ export default function LeadsTable({ rows, total, page, totalPages, setPage, loa
     else { setSortKey(key); setSortDir('desc') }
   }
 
-  const sorted = [...(rows ?? [])].sort((a, b) => {
+  const withNames = (rows ?? []).map(r => ({ ...r, full_name: fullName(r) }))
+
+  const sorted = [...withNames].sort((a, b) => {
     const aVal = a[sortKey] ?? ''
     const bVal = b[sortKey] ?? ''
     const cmp  = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
@@ -78,7 +88,7 @@ export default function LeadsTable({ rows, total, page, totalPages, setPage, loa
                 {sorted.map(lead => (
                   <tr key={lead.id}>
                     <td style={{ fontWeight: 600 }}>
-                      {lead.name} {lead.last_name ?? ''}
+                      {lead.full_name || '—'}
                     </td>
                     <td style={{ color: 'var(--fg-3)', fontFamily: 'var(--font-mono, monospace)', fontSize: 12 }}>
                       {lead.email}

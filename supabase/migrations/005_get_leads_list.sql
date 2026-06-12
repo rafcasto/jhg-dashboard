@@ -1,6 +1,7 @@
 -- ============================================================
 -- Migration 005: get_leads_list RPC
 -- Paginated lead rows — authenticated users only (not anon)
+-- NOTE: matches live schema — first_name / last_name / tag (singular)
 -- ============================================================
 
 create or replace function public.get_leads_list(
@@ -22,8 +23,8 @@ as $$
       select coalesce(json_agg(row_to_json(t)), '[]'::json)
       from (
         select
-          id, created_at, name, last_name, email,
-          stage::text, source, score, archetype, tags
+          id, created_at, first_name, last_name, email,
+          stage::text, source, score, archetype, tag, location
         from public.jobhackers_leads
         where (p_stage  is null or stage::text = p_stage)
           and (p_source is null or source      = p_source)
