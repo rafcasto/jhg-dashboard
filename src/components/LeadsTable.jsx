@@ -1,22 +1,16 @@
 import { useState } from 'react'
-
-const STAGE_COLORS = {
-  awareness:   '#7a1ec2',
-  acquisition: '#0033cc',
-  activation:  '#6bbf6b',
-  retention:   '#f5d000',
-  referral:    '#f08a1c',
-  revenue:     '#2f7a3a',
-}
+import { STAGE_MAP } from '../constants/stages'
 
 const COLUMNS = [
-  { key: 'full_name',  label: 'Name',     sortable: true  },
-  { key: 'email',      label: 'Email',    sortable: true  },
-  { key: 'stage',      label: 'Stage',    sortable: true  },
-  { key: 'source',     label: 'Source',   sortable: true  },
-  { key: 'score',      label: 'Score',    sortable: true  },
-  { key: 'archetype',  label: 'Archetype',sortable: false },
-  { key: 'created_at', label: 'Added',    sortable: true  },
+  { key: 'full_name',  label: 'Name',      sortable: true  },
+  { key: 'email',      label: 'Email',     sortable: true  },
+  { key: 'stage',      label: 'Stage',     sortable: true  },
+  { key: 'tag',        label: 'Tag',       sortable: false },
+  { key: 'source',     label: 'Source',    sortable: true  },
+  { key: 'location',   label: 'Location',  sortable: true  },
+  { key: 'score',      label: 'Score',     sortable: true  },
+  { key: 'archetype',  label: 'Archetype', sortable: false },
+  { key: 'created_at', label: 'Added',     sortable: true  },
 ]
 
 function formatDate(iso) {
@@ -32,8 +26,8 @@ export function fullName(lead) {
 }
 
 export default function LeadsTable({ rows, total, page, totalPages, setPage, loading }) {
-  const [sortKey, setSortKey]   = useState('created_at')
-  const [sortDir, setSortDir]   = useState('desc')
+  const [sortKey, setSortKey] = useState('created_at')
+  const [sortDir, setSortDir] = useState('desc')
 
   function toggleSort(key) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -85,35 +79,42 @@ export default function LeadsTable({ rows, total, page, totalPages, setPage, loa
                 </tr>
               </thead>
               <tbody>
-                {sorted.map(lead => (
-                  <tr key={lead.id}>
-                    <td style={{ fontWeight: 600 }}>
-                      {lead.full_name || '—'}
-                    </td>
-                    <td style={{ color: 'var(--fg-3)', fontFamily: 'var(--font-mono, monospace)', fontSize: 12 }}>
-                      {lead.email}
-                    </td>
-                    <td>
-                      <span
-                        className="stage-badge"
-                        style={{ background: STAGE_COLORS[lead.stage] ?? 'var(--fg-3)' }}
-                      >
-                        {lead.stage}
-                      </span>
-                    </td>
-                    <td style={{ color: 'var(--fg-3)' }}>{lead.source ?? '—'}</td>
-                    <td>
-                      <div className="score-bar-wrap">
-                        <div className="score-bar">
-                          <div className="score-fill" style={{ width: `${lead.score ?? 0}%` }} />
+                {sorted.map(lead => {
+                  const stageInfo = STAGE_MAP[lead.stage]
+                  return (
+                    <tr key={lead.id}>
+                      <td style={{ fontWeight: 600 }}>
+                        {lead.full_name || '—'}
+                      </td>
+                      <td style={{ color: 'var(--fg-3)', fontFamily: 'var(--font-mono, monospace)', fontSize: 12 }}>
+                        {lead.email}
+                      </td>
+                      <td>
+                        <span
+                          className="stage-badge"
+                          style={{ background: stageInfo?.color ?? 'var(--fg-3)' }}
+                        >
+                          {stageInfo?.emoji} {lead.stage}
+                        </span>
+                      </td>
+                      <td style={{ color: 'var(--fg-3)', fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {lead.tag ?? '—'}
+                      </td>
+                      <td style={{ color: 'var(--fg-3)' }}>{lead.source ?? '—'}</td>
+                      <td style={{ color: 'var(--fg-3)', fontSize: 12 }}>{lead.location ?? '—'}</td>
+                      <td>
+                        <div className="score-bar-wrap">
+                          <div className="score-bar">
+                            <div className="score-fill" style={{ width: `${lead.score ?? 0}%` }} />
+                          </div>
+                          <span className="score-num">{lead.score ?? 0}</span>
                         </div>
-                        <span className="score-num">{lead.score ?? 0}</span>
-                      </div>
-                    </td>
-                    <td style={{ color: 'var(--fg-3)', fontSize: 12 }}>{lead.archetype ?? '—'}</td>
-                    <td style={{ color: 'var(--fg-3)', fontSize: 12 }}>{formatDate(lead.created_at)}</td>
-                  </tr>
-                ))}
+                      </td>
+                      <td style={{ color: 'var(--fg-3)', fontSize: 12 }}>{lead.archetype ?? '—'}</td>
+                      <td style={{ color: 'var(--fg-3)', fontSize: 12 }}>{formatDate(lead.created_at)}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
