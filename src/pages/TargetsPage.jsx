@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { supabase } from '../supabase'
-import { STAGES, cumulativeMetrics, cumulativeStages } from '../constants/stages'
+import { STAGES } from '../constants/stages'
 import { useTargets } from '../hooks/useTargets'
 import { useCohorts, cohortStatus } from '../hooks/useCohorts'
 import { useFunnelMetrics } from '../hooks/useFunnelMetrics'
@@ -124,16 +124,16 @@ function useCohortActuals(cohort, dashboard) {
           p_start: pStart, p_end: pEnd, p_source: null,
         })
         if (cancelled) return
-        const cum = cumulativeMetrics(data)
-        setRows(STAGES.map(s => ({ stage: s, actual: cum[s.key] ?? 0 })))
+        // Raw per-stage counts — each lead is counted once, in its current stage
+        setRows(STAGES.map(s => ({ stage: s, actual: data?.[s.key] ?? 0 })))
       } else if (dashboard) {
         // Custom dashboard funnel
         const { data } = await supabase.rpc('aarrr_tag_breakdown', {
           p_start: pStart, p_end: pEnd, p_stage: null,
         })
         if (cancelled) return
-        const stages = cumulativeStages(computeStageCounts(dashboard.stages, data))
-        setRows(stages.map(s => ({ stage: s, actual: s.cum ?? 0 })))
+        const stages = computeStageCounts(dashboard.stages, data)
+        setRows(stages.map(s => ({ stage: s, actual: s.count ?? 0 })))
       } else {
         setRows([])
       }
@@ -357,12 +357,11 @@ function OverallTab() {
 
   const rows = useMemo(() => {
     if (scope === 'aarrr') {
-      const cum = cumulativeMetrics(metrics)
-      return STAGES.map(s => ({ stage: s, actual: cum[s.key] ?? 0 }))
+      return STAGES.map(s => ({ stage: s, actual: metrics?.[s.key] ?? 0 }))
     }
     if (!selectedDashboard) return []
-    return cumulativeStages(computeStageCounts(selectedDashboard.stages, tagData?.raw))
-      .map(s => ({ stage: s, actual: s.cum ?? 0 }))
+    return computeStageCounts(selectedDashboard.stages, tagData?.raw)
+      .map(s => ({ stage: s, actual: s.count ?? 0 }))
   }, [scope, metrics, selectedDashboard, tagData])
 
   const scopeTargets = targets[scope] ?? {}

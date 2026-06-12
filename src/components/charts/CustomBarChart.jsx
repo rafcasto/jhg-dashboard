@@ -15,28 +15,25 @@ const CustomTooltip = ({ active, payload }) => {
         {d.emoji} {d.name}
       </p>
       <p style={{ color: payload[0].fill, fontWeight: 600 }}>
-        {d.reached?.toLocaleString()} reached this stage
-      </p>
-      <p style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 2 }}>
-        {d.current?.toLocaleString()} currently in stage
+        {d.count?.toLocaleString()} leads in stage
       </p>
     </div>
   )
 }
 
 /**
- * Generic bar chart for custom funnels.
- * stages: [{ key, label, emoji, color, count (raw), cum (reached) }]
+ * Generic bar chart for custom funnels — raw per-stage counts
+ * (each lead is counted once, in its current stage).
+ * stages: [{ key, label, emoji, color, count }]
  */
 export default function CustomBarChart({ stages }) {
   if (!stages?.length) return <div className="empty-state"><p>No stages defined yet</p></div>
 
   const data = stages.map(s => ({
-    name:    s.label,
-    emoji:   s.emoji,
-    reached: s.cum ?? s.count ?? 0,
-    current: s.count ?? 0,
-    color:   s.color,
+    name:  s.label,
+    emoji: s.emoji,
+    count: s.count ?? 0,
+    color: s.color,
   }))
 
   return (
@@ -53,7 +50,7 @@ export default function CustomBarChart({ stages }) {
           axisLine={false} tickLine={false} width={50}
         />
         <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--bg-soft)' }} />
-        <Bar dataKey="reached" radius={[6, 6, 0, 0]} maxBarSize={72}>
+        <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={72}>
           {data.map((entry, i) => <Cell key={i} fill={entry.color} />)}
         </Bar>
       </ReBarChart>

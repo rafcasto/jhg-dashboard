@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useCustomDashboards, computeStageCounts } from '../hooks/useCustomDashboards'
 import { useTagBreakdown } from '../hooks/useTagBreakdown'
-import { cumulativeStages } from '../constants/stages'
 import CustomFunnelChart from '../components/charts/CustomFunnelChart'
 import CustomBarChart   from '../components/charts/CustomBarChart'
 import CustomDonutChart from '../components/charts/CustomDonutChart'
@@ -258,10 +257,10 @@ export default function CustomDashboardsPage() {
   const selected = dashboards.find(d => d.id === selectedId)
     ?? (dashboards.length ? dashboards[0] : null)
 
-  // Raw counts per stage + cumulative "reached" counts
+  // Raw counts per stage — each lead is counted once, in its current stage
   const stagesWithCounts = useMemo(
     () => selected
-      ? cumulativeStages(computeStageCounts(selected.stages, tagData?.raw))
+      ? computeStageCounts(selected.stages, tagData?.raw)
       : [],
     [selected, tagData]
   )
@@ -374,7 +373,7 @@ export default function CustomDashboardsPage() {
 
                 {chartView === 'funnel' && (
                   <CustomFunnelChart
-                    stages={stagesWithCounts.map(s => ({ ...s, count: s.cum }))}
+                    stages={stagesWithCounts}
                   />
                 )}
                 {chartView === 'bar'   && <CustomBarChart   stages={stagesWithCounts} />}

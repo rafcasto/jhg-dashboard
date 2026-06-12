@@ -50,35 +50,3 @@ export const STAGES = [
 export const STAGE_MAP = Object.fromEntries(STAGES.map(s => [s.key, s]))
 
 export const STAGE_KEYS = STAGES.map(s => s.key)
-
-/**
- * Cumulative ("reached this stage") counts.
- *
- * Each lead is stored in exactly ONE stage — its current one. But a lead
- * currently in Acquisition has, by definition, passed through Awareness.
- * For funnel/conversion math the count for stage N is therefore the sum
- * of leads in stage N and every later stage. This makes the top of the
- * funnel equal the total (100%) and keeps KPI cards and funnel consistent.
- */
-export function cumulativeMetrics(metrics) {
-  const out = {}
-  let running = 0
-  for (let i = STAGES.length - 1; i >= 0; i--) {
-    running += metrics?.[STAGES[i].key] ?? 0
-    out[STAGES[i].key] = running
-  }
-  return out
-}
-
-/**
- * Same idea for arbitrary ordered stage arrays (custom dashboards):
- * adds a `cum` field = own count + every later stage's count.
- */
-export function cumulativeStages(stages) {
-  let running = 0
-  const reversed = [...(stages ?? [])].reverse().map(s => {
-    running += s.count ?? 0
-    return { ...s, cum: running }
-  })
-  return reversed.reverse()
-}

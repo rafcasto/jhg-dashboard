@@ -1,23 +1,20 @@
-import { STAGES, cumulativeMetrics } from '../constants/stages'
+import { STAGES } from '../constants/stages'
 
 /**
- * KPI cards — conversion-rate first, cumulative funnel counts.
- * Counts are "reached this stage" (own stage + all later stages), so a
- * lead in Acquisition also counts toward Awareness. This keeps the cards
- * consistent with the funnel chart: the top stage is always 100%.
+ * KPI cards — raw per-stage counts (each lead is counted once, in its
+ * current stage). The big value is the NUMBER of leads in the stage and
+ * the conversion rate from the previous stage is shown underneath.
  */
 export default function KPICards({ metrics, loading }) {
-  const cum = cumulativeMetrics(metrics)
-
   return (
     <div className="kpi-grid" style={{ '--kpi-cols': 6 }}>
       {STAGES.map((stage, i) => {
-        const count     = cum[stage.key] ?? 0
+        const count     = metrics?.[stage.key] ?? 0
         const prevStage = i === 0 ? null : STAGES[i - 1]
-        const prevCount = prevStage ? (cum[prevStage.key] ?? 0) : null
+        const prevCount = prevStage ? (metrics?.[prevStage.key] ?? 0) : null
 
-        // First card: everyone enters the funnel → 100%.
-        // Others: conversion from previous stage (cumulative).
+        // First card: top of funnel → 100%.
+        // Others: conversion from the previous stage's count.
         const pct = prevStage
           ? (prevCount > 0 ? (count / prevCount) * 100 : null)
           : 100
@@ -34,14 +31,14 @@ export default function KPICards({ metrics, loading }) {
           >
             <div className="kpi-emoji">{stage.emoji}</div>
             <div className="kpi-label">{stage.label}</div>
-            <div className="kpi-value" style={{ color: pctColor }}>
-              {loading
-                ? '—'
-                : pct === null ? 'n/a' : `${pct.toFixed(1)}%`}
+            <div className="kpi-value">
+              {loading ? '—' : count.toLocaleString()}
             </div>
             <div className="kpi-conversion">
-              <span style={{ fontWeight: 600, color: 'var(--fg-2)' }}>
-                {loading ? '—' : count.toLocaleString()} reached
+              <span style={{ fontWeight: 700, color: pctColor }}>
+                {loading
+                  ? '—'
+                  : pct === null ? 'n/a' : `${pct.toFixed(1)}%`}
               </span>
               <span>
                 {prevStage ? `from ${prevStage.label.toLowerCase()}` : 'top of funnel'}
