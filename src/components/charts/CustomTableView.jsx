@@ -1,14 +1,14 @@
 /**
- * Table view for custom funnels — one row per stage with raw count,
- * cumulative "reached" count, share of top, conversion from previous
- * stage, and the tags mapped to the stage.
+ * Table view for custom funnels — one row per stage with the raw count
+ * (each lead is counted once, in its current stage), share of top,
+ * conversion from previous stage, and the tags mapped to the stage.
  *
- * stages: [{ key, label, emoji, color, count (raw), cum (reached), tags }]
+ * stages: [{ key, label, emoji, color, count, tags }]
  */
 export default function CustomTableView({ stages }) {
   if (!stages?.length) return <div className="empty-state"><p>No stages defined yet</p></div>
 
-  const top = Math.max(1, stages[0]?.cum ?? stages[0]?.count ?? 0)
+  const top = Math.max(1, stages[0]?.count ?? 0)
 
   const th = {
     padding: '10px 12px', fontWeight: 700, fontSize: 11,
@@ -26,8 +26,7 @@ export default function CustomTableView({ stages }) {
         <thead>
           <tr>
             <th style={{ ...th, textAlign: 'left' }}>Stage</th>
-            <th style={th}>Currently in</th>
-            <th style={th}>Reached</th>
+            <th style={th}>Leads</th>
             <th style={th}>% of top</th>
             <th style={th}>Conv. from prev</th>
             <th style={{ ...th, textAlign: 'left' }}>Tags mapped</th>
@@ -35,10 +34,10 @@ export default function CustomTableView({ stages }) {
         </thead>
         <tbody>
           {stages.map((s, i) => {
-            const reached  = s.cum ?? s.count ?? 0
-            const prev     = i === 0 ? null : (stages[i - 1].cum ?? stages[i - 1].count ?? 0)
-            const convPct  = prev === null ? null : prev > 0 ? (reached / prev) * 100 : 0
-            const sharePct = (reached / top) * 100
+            const count    = s.count ?? 0
+            const prev     = i === 0 ? null : (stages[i - 1].count ?? 0)
+            const convPct  = prev === null ? null : prev > 0 ? (count / prev) * 100 : 0
+            const sharePct = (count / top) * 100
             const convColor = convPct === null
               ? 'var(--fg-3)'
               : convPct < 20 ? '#dc2626' : convPct < 50 ? '#f08a1c' : '#22c55e'
@@ -51,8 +50,7 @@ export default function CustomTableView({ stages }) {
                     {s.label}
                   </span>
                 </td>
-                <td style={{ ...td, color: 'var(--fg-2)' }}>{(s.count ?? 0).toLocaleString()}</td>
-                <td style={{ ...td, fontWeight: 700 }}>{reached.toLocaleString()}</td>
+                <td style={{ ...td, fontWeight: 700 }}>{count.toLocaleString()}</td>
                 <td style={td}>{sharePct.toFixed(1)}%</td>
                 <td style={{ ...td, fontWeight: 700, color: convColor }}>
                   {convPct === null ? '—' : `${convPct.toFixed(1)}%`}
@@ -80,8 +78,7 @@ export default function CustomTableView({ stages }) {
         </tbody>
       </table>
       <p style={{ fontSize: 11, color: 'var(--fg-4)', marginTop: 8, paddingLeft: 4 }}>
-        <strong>Currently in</strong> = leads whose tag sits in this stage today ·{' '}
-        <strong>Reached</strong> = this stage + all later stages (used for conversion math)
+        <strong>Leads</strong> = leads whose tag sits in this stage today (each lead counted once)
       </p>
     </div>
   )
