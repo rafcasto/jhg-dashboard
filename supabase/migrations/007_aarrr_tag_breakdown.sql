@@ -1,7 +1,7 @@
 -- ============================================================
 -- Migration 007: aarrr_tag_breakdown RPC
 -- Returns tag distribution per stage — sub-steps within each AAARRR stage
--- Each lead can have multiple tags (text[] column), so we unnest them.
+-- NOTE: matches live schema — each lead has ONE tag (text column).
 -- ============================================================
 
 create or replace function public.aarrr_tag_breakdown(
@@ -18,17 +18,10 @@ as $$
   select coalesce(json_agg(row_to_json(t)), '[]'::json)
   from (
     select
-      stage::text                   as stage,
-      unnested_tag                  as tag,
-      count(*)::int                 as count
-    from public.jobhackers_leads,
-         unnest(
-           case
-             when tags is null or array_length(tags, 1) = 0
-             then array['(untagged)']::text[]
-             else tags
-           end
-         ) as unnested_tag
+      stage::text                          as stage,
+      coalesce(nullif(trim(tag), ''), '(untagged)') as tag,
+      count(*)::int                        as count
+    from public.jobhackers_leads
     where (p_start is null or created_at >= p_start)
       and (p_end   is null or created_at <= p_end)
       and (p_stage is null or stage::text = p_stage)

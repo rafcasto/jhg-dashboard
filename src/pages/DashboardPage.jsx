@@ -23,11 +23,6 @@ const CHART_VIEWS = [
   { key: 'substeps', label: '🏷 Sub-steps' },
 ]
 
-function formatDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })
-}
-
 export default function DashboardPage() {
   const [chartView, setChartView] = useState('funnel')
   const [filters, setFilters] = useState({
@@ -52,50 +47,11 @@ export default function DashboardPage() {
     stage: filters.stage || undefined,
   })
 
-  const total         = metrics?.total ?? 0
-  const revenueCount  = metrics?.revenue ?? 0
-  const awareCount    = metrics?.awareness ?? 0
-  const overallConv   = awareCount > 0
-    ? ((revenueCount / awareCount) * 100).toFixed(1)
-    : 0
-  const lastUpdated   = metrics?.last_updated
-
   return (
     <div>
       <div className="page-header">
         <h1>⚓ AAARRR Pirate Metrics</h1>
         <p>Awareness · Acquisition · Activation · Retention · Referral · Revenue</p>
-      </div>
-
-      {/* Hero stats */}
-      <div className="funnel-hero">
-        <div className="funnel-hero-stat">
-          <div className="label">Total Leads</div>
-          <div className="value">{metricsLoading ? '—' : total.toLocaleString()}</div>
-          <div className="sub">All 6 stages</div>
-        </div>
-        <div className="funnel-hero-stat">
-          <div className="label">👀 Awareness</div>
-          <div className="value">{metricsLoading ? '—' : awareCount.toLocaleString()}</div>
-          <div className="sub">Top of funnel</div>
-        </div>
-        <div className="funnel-hero-stat">
-          <div className="label">🤑 Revenue</div>
-          <div className="value">{metricsLoading ? '—' : revenueCount.toLocaleString()}</div>
-          <div className="sub">Bottom of funnel</div>
-        </div>
-        <div className="funnel-hero-stat">
-          <div className="label">Overall Conversion</div>
-          <div className="value">{metricsLoading ? '—' : `${overallConv}%`}</div>
-          <div className="sub">Awareness → Revenue</div>
-        </div>
-        {lastUpdated && (
-          <div className="funnel-hero-stat">
-            <div className="label">Last Updated</div>
-            <div className="value" style={{ fontSize: 16 }}>{formatDate(lastUpdated)}</div>
-            <div className="sub">Most recent lead</div>
-          </div>
-        )}
       </div>
 
       {/* Filters */}

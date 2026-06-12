@@ -78,53 +78,37 @@ function StageAccordion({ stageData }) {
                     No tags recorded for this stage yet.
                   </p>
                 ) : (
-                  <>
-                    <ResponsiveContainer width="100%" height={Math.max(160, top10.length * 32)}>
-                      <BarChart
-                        data={top10}
-                        layout="vertical"
-                        margin={{ top: 4, right: 60, left: 8, bottom: 4 }}
-                      >
-                        <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--fg-3)' }}
-                               axisLine={false} tickLine={false} />
-                        <YAxis
-                          type="category" dataKey="tag" width={140}
-                          tick={{ fontSize: 12, fill: 'var(--fg-2)', fontWeight: 500 }}
-                          axisLine={false} tickLine={false}
-                        />
-                        <Tooltip
-                          cursor={{ fill: 'var(--bg-soft)' }}
-                          formatter={(value) => [`${value} leads`, stage.label]}
-                        />
-                        <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={24}>
-                          {top10.map((_, idx) => (
-                            <Cell
-                              key={idx}
-                              fill={stage.color}
-                              fillOpacity={1 - idx * 0.06}
-                            />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-
-                    {/* Percentage pills for top tags */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                      {top10.map(t => (
-                        <span key={t.tag} style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4,
-                          padding: '3px 10px', borderRadius: 'var(--radius-pill)',
-                          background: `${stage.color}18`, border: `1px solid ${stage.color}40`,
-                          fontSize: 12, fontWeight: 600, color: stage.color,
-                        }}>
-                          {t.tag}
-                          <span style={{ fontWeight: 400, color: 'var(--fg-3)', fontSize: 11 }}>
-                            {total > 0 ? Math.round((t.count / total) * 100) : 0}%
-                          </span>
-                        </span>
-                      ))}
-                    </div>
-                  </>
+                  <ResponsiveContainer width="100%" height={Math.max(160, top10.length * 32)}>
+                    <BarChart
+                      data={top10}
+                      layout="vertical"
+                      margin={{ top: 4, right: 60, left: 8, bottom: 4 }}
+                    >
+                      <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--fg-3)' }}
+                             axisLine={false} tickLine={false} />
+                      <YAxis
+                        type="category" dataKey="tag" width={140}
+                        tick={{ fontSize: 12, fill: 'var(--fg-2)', fontWeight: 500 }}
+                        axisLine={false} tickLine={false}
+                      />
+                      <Tooltip
+                        cursor={{ fill: 'var(--bg-soft)' }}
+                        formatter={(value) => [
+                          `${value} leads (${total > 0 ? Math.round((value / total) * 100) : 0}%)`,
+                          stage.label,
+                        ]}
+                      />
+                      <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={24}>
+                        {top10.map((_, idx) => (
+                          <Cell
+                            key={idx}
+                            fill={stage.color}
+                            fillOpacity={1 - idx * 0.06}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
                 )}
               </div>
             )}
@@ -207,7 +191,7 @@ function TagOverview({ stageData }) {
         </tbody>
       </table>
       <p style={{ fontSize: 11, color: 'var(--fg-4)', marginTop: 8, paddingLeft: 4 }}>
-        Showing top 12 tags by total count. Tags come from the <code>tags</code> array column on each lead.
+        Showing top 12 tags by total count. Tags come from the <code>tag</code> column on each lead.
       </p>
     </div>
   )
