@@ -1,9 +1,20 @@
 import { useState, useMemo } from 'react'
 import { useCustomDashboards, computeStageCounts } from '../hooks/useCustomDashboards'
 import { useTagBreakdown } from '../hooks/useTagBreakdown'
+import { cumulativeStages } from '../constants/stages'
 import CustomFunnelChart from '../components/charts/CustomFunnelChart'
+import CustomBarChart   from '../components/charts/CustomBarChart'
+import CustomDonutChart from '../components/charts/CustomDonutChart'
+import CustomTableView  from '../components/charts/CustomTableView'
 
 const PALETTE = ['#7a1ec2', '#0033cc', '#6bbf6b', '#f5d000', '#f08a1c', '#2f7a3a', '#dc2626', '#0891b2']
+
+const CHART_VIEWS = [
+  { key: 'funnel', label: '🎯 Funnel' },
+  { key: 'bar',    label: '📊 Bar'    },
+  { key: 'donut',  label: '🍩 Mix'    },
+  { key: 'table',  label: '📋 Table'  },
+]
 
 const EMPTY_STAGE = () => ({
   key:   crypto.randomUUID().slice(0, 8),
@@ -225,9 +236,10 @@ export default function CustomDashboardsPage() {
   const { dashboards, loading, createDashboard, updateDashboard, deleteDashboard } = useCustomDashboards()
   const [selectedId, setSelectedId] = useState(null)
   const [editing, setEditing]       = useState(null)   // null | 'new' | dashboard object
+  const [chartView, setChartView]   = useState('funnel')
   const [filters, setFilters]       = useState({ startDate: '', endDate: '' })
 
-  // All tags + counts (unfiltered date range for the builder; filtered for the view)
+  // All tags + counts (also drives the stage counts for the selected range)
   const { data: tagData, loading: tagsLoading } = useTagBreakdown({
     startDate: filters.startDate || undefined,
     endDate:   filters.endDate   || undefined,
@@ -246,8 +258,11 @@ export default function CustomDashboardsPage() {
   const selected = dashboards.find(d => d.id === selectedId)
     ?? (dashboards.length ? dashboards[0] : null)
 
+  // Raw counts per stage + cumulative "reached" counts
   const stagesWithCounts = useMemo(
-    () => selected ? computeStageCounts(selected.stages, tagData?.raw) : [],
+    () => selected
+      ? cumulativeStages(computeStageCounts(selected.stages, tagData?.raw))
+      : [],
     [selected, tagData]
   )
 
@@ -325,7 +340,7 @@ export default function CustomDashboardsPage() {
             </button>
           </div>
 
-          {/* Funnel view */}
+          {/* Visualisation */}
           <div className="chart-section">
             {loading || tagsLoading ? (
               <div className="spinner-wrap"><div className="spinner" /></div>
@@ -338,12 +353,33 @@ export default function CustomDashboardsPage() {
             ) : (
               <>
                 <div className="chart-section-header">
-                  <h2 className="chart-section-title">{selected.name}</h2>
-                  {selected.description && (
-                    <span style={{ fontSize: 13, color: 'var(--fg-3)' }}>{selected.description}</span>
-                  )}
+                  <div>
+                    <h2 className="chart-section-title">{selected.name}</h2>
+                    {selected.description && (
+                      <span style={{ fontSize: 13, color: 'var(--fg-3)' }}>{selected.description}</span>
+                    )}
+                  </div>
+                  <div className="chart-toggle-group">
+                    {CHART_VIEWS.map(v => (
+                      <button
+                        key={v.key}
+                        className={`chart-toggle-btn${chartView === v.key ? ' active' : ''}`}
+                        onClick={() => setChartView(v.key)}
+                      >
+                        {v.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <CustomFunnelChart stages={stagesWithCounts} />
+
+                {chartView === 'funnel' && (
+                  <CustomFunnelChart
+                    stages={stagesWithCounts.map(s => ({ ...s, count: s.cum }))}
+                  />
+                )}
+                {chartView === 'bar'   && <CustomBarChart   stages={stagesWithCounts} />}
+                {chartView === 'donut' && <CustomDonutChart stages={stagesWithCounts} />}
+                {chartView === 'table' && <CustomTableView  stages={stagesWithCounts} />}
               </>
             )}
           </div>
