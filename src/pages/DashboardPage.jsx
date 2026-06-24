@@ -8,7 +8,6 @@ import TrendChart      from '../components/charts/TrendChart'
 import DonutChart      from '../components/charts/DonutChart'
 import SourceMatrix    from '../components/charts/SourceMatrix'
 import SubStepsChart   from '../components/charts/SubStepsChart'
-import StageLegend     from '../components/StageLegend'
 import { useFunnelMetrics }   from '../hooks/useFunnelMetrics'
 import { useTrendData }       from '../hooks/useTrendData'
 import { useSourceBreakdown } from '../hooks/useSourceBreakdown'
@@ -60,17 +59,6 @@ export default function DashboardPage() {
 
       {/* KPI Cards — 6 across */}
       <KPICards metrics={metrics} loading={metricsLoading} />
-
-      {/* AAARRR stage legend — definitions + conversion between stages */}
-      <div className="chart-section">
-        <div className="chart-section-header">
-          <h2 className="chart-section-title">Stage Legend</h2>
-          <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
-            Conversion is measured between consecutive AAARRR stages
-          </span>
-        </div>
-        <StageLegend metrics={metrics} />
-      </div>
 
       {/* Chart section */}
       <div className="chart-section">
