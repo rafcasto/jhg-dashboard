@@ -45,7 +45,7 @@ function TargetRow({ stage, actual, target, editing, draft, onDraftChange }) {
           {stage.label}
         </span>
         {stage.uniqueByEmail && (
-          <span className="stage-legend-badge"
+          <span className="metric-badge"
                 title="Counted as unique people (distinct email per stage)">
             unique · by email
           </span>

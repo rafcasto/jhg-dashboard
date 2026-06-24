@@ -262,16 +262,22 @@ a:hover { text-decoration: underline; }
 
 /* ---------- KPI Cards ---------- */
 .kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: var(--space-4);
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
   margin-bottom: var(--space-6);
 }
 
-@media (max-width: 1400px) { .kpi-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 768px)  { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 1100px) {
+  .kpi-grid { flex-wrap: wrap; }
+  .kpi-grid .kpi-card { flex: 1 1 220px; }
+}
 
 .kpi-card {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-card);
   border-radius: var(--radius-md);
   padding: var(--space-5);
@@ -280,6 +286,56 @@ a:hover { text-decoration: underline; }
   transition: box-shadow var(--dur-2) var(--ease-out);
 }
 .kpi-card:hover { box-shadow: var(--shadow-2); }
+
+/* Description under each stage card */
+.kpi-desc {
+  margin: var(--space-3) 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg-2);
+}
+
+/* Arrow connector carrying the conversion rate between two stages */
+.kpi-arrow {
+  flex: 0 0 auto;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 2px;
+}
+.kpi-arrow-pct {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+}
+.kpi-arrow-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+@media (max-width: 1100px) {
+  .kpi-arrow { transform: rotate(90deg); flex-basis: 100%; padding: var(--space-2) 0; }
+}
+
+/* Small reusable metric badge (e.g. unique-by-email stages) */
+.metric-badge {
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--fg-2);
+  background: var(--bg-tint);
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  margin-top: var(--space-1);
+}
 
 .kpi-label {
   font-size: 11px;
@@ -297,19 +353,6 @@ a:hover { text-decoration: underline; }
   color: var(--fg-1);
   line-height: 1;
   margin-bottom: var(--space-2);
-}
-
-.kpi-conversion {
-  font-size: 12px;
-  color: var(--fg-4);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.kpi-conversion-rate {
-  font-weight: 600;
-  color: var(--fg-3);
 }
 
 .kpi-emoji { font-size: 18px; margin-bottom: var(--space-2); }
@@ -841,72 +884,4 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
   color: #166534;
   margin-bottom: var(--space-4);
-}
-
-/* ============================================================
-   AAARRR Stage Legend
-   ============================================================ */
-.stage-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.stage-legend-row {
-  display: flex;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-2);
-  border-bottom: 1px solid var(--jh-line);
-}
-.stage-legend-row:last-child { border-bottom: none; }
-
-.stage-legend-dot {
-  flex-shrink: 0;
-  width: 12px;
-  height: 12px;
-  border-radius: var(--radius-pill);
-  margin-top: 5px;
-}
-
-.stage-legend-body { flex: 1; min-width: 0; }
-
-.stage-legend-head {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  margin-bottom: 2px;
-}
-
-.stage-legend-name {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 14px;
-}
-
-.stage-legend-count {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 15px;
-  color: var(--fg-1);
-}
-
-.stage-legend-conv { font-size: 12px; }
-
-.stage-legend-badge {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  color: var(--fg-2);
-  background: var(--bg-tint);
-  border-radius: var(--radius-pill);
-  padding: 2px 8px;
-}
-
-.stage-legend-desc {
-  font-size: 13px;
-  color: var(--fg-2);
-  line-height: 1.45;
-  margin: 0;
 }
