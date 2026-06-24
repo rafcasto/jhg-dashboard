@@ -38,12 +38,18 @@ function TargetRow({ stage, actual, target, editing, draft, onDraftChange }) {
       padding: '14px 16px',
       borderBottom: '1px solid var(--jh-line)',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 18 }}>{stage.emoji}</span>
         <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13,
                        color: stage.color }}>
           {stage.label}
         </span>
+        {stage.uniqueByEmail && (
+          <span className="stage-legend-badge"
+                title="Counted as unique people (distinct email per stage)">
+            unique · by email
+          </span>
+        )}
       </div>
 
       <div style={{ background: 'var(--bg-soft)', borderRadius: 'var(--radius-pill)',
@@ -437,6 +443,12 @@ function OverallTab() {
         <div className="chart-section-header">
           <h2 className="chart-section-title">
             Actual vs Target — {scope === 'aarrr' ? 'AAARRR Pirate Metrics' : selectedDashboard?.name}
+            {scope === 'aarrr' && (
+              <span style={{ display: 'block', fontSize: 11, fontWeight: 500,
+                             color: 'var(--fg-3)', marginTop: 4 }}>
+                Acquisition, Activation &amp; Retention are counted as unique people (distinct email per stage)
+              </span>
+            )}
           </h2>
           {summary && (
             <span style={{ fontSize: 13, fontWeight: 600,
