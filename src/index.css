@@ -261,69 +261,123 @@ a:hover { text-decoration: underline; }
 }
 
 /* ---------- KPI Cards ---------- */
-.kpi-grid {
+/* ============================================================
+   AAARRR funnel — KPI cards + conversion connectors
+   ============================================================ */
+.pm-funnel {
   display: flex;
   align-items: stretch;
-  gap: var(--space-2);
+  gap: 0;
   margin-bottom: var(--space-6);
 }
 
-@media (max-width: 1100px) {
-  .kpi-grid { flex-wrap: wrap; }
-  .kpi-grid .kpi-card { flex: 1 1 220px; }
-}
-
-.kpi-card {
+/* ---- Stage card ---- */
+.pm-card {
   flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-card);
+  border: 1px solid var(--jh-line);
+  border-top: 3px solid var(--c, var(--jh-line));
   border-radius: var(--radius-md);
-  padding: var(--space-5);
+  padding: var(--space-5) var(--space-4) var(--space-4);
   box-shadow: var(--shadow-1);
-  border-top: 3px solid var(--stage-color, var(--jh-line));
-  transition: box-shadow var(--dur-2) var(--ease-out);
+  transition: box-shadow var(--dur-2) var(--ease-out),
+              transform var(--dur-2) var(--ease-out);
 }
-.kpi-card:hover { box-shadow: var(--shadow-2); }
+.pm-card:hover { box-shadow: var(--shadow-2); transform: translateY(-2px); }
 
-/* Description under each stage card */
-.kpi-desc {
-  margin: var(--space-3) 0 0;
-  font-size: 12px;
-  line-height: 1.45;
+/* Fixed-height stat zone keeps every number on the same baseline,
+   so the connector arrows line up exactly with the values. */
+.pm-card__stat {
+  height: 124px;
+  flex-shrink: 0;
+}
+
+.pm-card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--space-3);
+}
+.pm-card__emoji { font-size: 16px; line-height: 1; }
+.pm-card__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+.pm-card__value {
+  font-family: var(--font-display);
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--fg-1);
+  letter-spacing: -0.5px;
+}
+
+/* Reserved slot — present on every card so values align whether or
+   not the stage carries a badge. */
+.pm-card__badge-slot { min-height: 26px; margin-top: var(--space-3); }
+
+.pm-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: #1e3a8a;
+  background: #eef2ff;
+  border-radius: var(--radius-pill);
+  padding: 3px 9px;
+}
+
+/* Definition, separated from the metric by a hairline divider */
+.pm-card__desc {
+  margin: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--jh-line);
+  font-size: 12.5px;
+  line-height: 1.55;
   color: var(--fg-2);
 }
 
-/* Arrow connector carrying the conversion rate between two stages */
-.kpi-arrow {
-  flex: 0 0 auto;
-  align-self: center;
+/* ---- Conversion connector (sits in the gap between two cards) ---- */
+.pm-conn {
+  flex: 0 0 64px;
+  align-self: flex-start;
+  /* nudge down so the connector centres on the value of the stat zone */
+  margin-top: 56px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 0 2px;
+  gap: 5px;
 }
-.kpi-arrow-pct {
+.pm-conn__pct {
   font-family: var(--font-display);
   font-size: 13px;
   font-weight: 800;
   line-height: 1;
 }
-.kpi-arrow-label {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  color: var(--fg-3);
-}
-@media (max-width: 1100px) {
-  .kpi-arrow { transform: rotate(90deg); flex-basis: 100%; padding: var(--space-2) 0; }
+.pm-conn__arrow { display: block; }
+
+/* ---- Responsive: stack into a wrapping grid, rotate connectors ---- */
+@media (max-width: 1180px) {
+  .pm-funnel { flex-wrap: wrap; gap: var(--space-3); }
+  .pm-card { flex: 1 1 240px; }
+  .pm-conn {
+    flex-basis: 100%;
+    align-self: center;
+    margin-top: 0;
+    flex-direction: row;
+    gap: 8px;
+  }
+  .pm-conn__arrow { transform: rotate(90deg); }
 }
 
-/* Small reusable metric badge (e.g. unique-by-email stages) */
+/* Small reusable metric badge (used in the Targets section) */
 .metric-badge {
   align-self: flex-start;
   font-size: 10px;
@@ -336,26 +390,6 @@ a:hover { text-decoration: underline; }
   padding: 2px 8px;
   margin-top: var(--space-1);
 }
-
-.kpi-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  color: var(--fg-3);
-  margin-bottom: var(--space-2);
-}
-
-.kpi-value {
-  font-family: var(--font-display);
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--fg-1);
-  line-height: 1;
-  margin-bottom: var(--space-2);
-}
-
-.kpi-emoji { font-size: 18px; margin-bottom: var(--space-2); }
 
 /* ---------- Filter Bar ---------- */
 .filter-bar {
