@@ -2,10 +2,12 @@ import { Fragment } from 'react'
 import { STAGES } from '../constants/stages'
 
 /**
- * KPI cards — one card per AAARRR stage showing the stage count and a
- * plain-English description of what the stage measures. Between each pair
- * of cards an arrow shows the conversion rate from one stage into the next
- * (conversion is always measured between consecutive AAARRR stages).
+ * AAARRR funnel KPI cards.
+ *
+ * Each card has a FIXED-HEIGHT stat zone (emoji · label · value · badge
+ * slot) so every number sits on the same baseline across the row — which
+ * lets the conversion arrows in the gaps align exactly to the numbers they
+ * connect. A hairline divider separates the metric from its definition.
  */
 function convColor(pct) {
   if (pct === null) return 'var(--fg-3)'
@@ -14,9 +16,9 @@ function convColor(pct) {
 
 export default function KPICards({ metrics, loading }) {
   return (
-    <div className="kpi-grid">
+    <div className="pm-funnel">
       {STAGES.map((stage, i) => {
-        const count    = metrics?.[stage.key] ?? 0
+        const count     = metrics?.[stage.key] ?? 0
         const nextStage = i < STAGES.length - 1 ? STAGES[i + 1] : null
         const nextCount = nextStage ? (metrics?.[nextStage.key] ?? 0) : null
 
@@ -24,36 +26,41 @@ export default function KPICards({ metrics, loading }) {
         const pct = nextStage
           ? (count > 0 ? (nextCount / count) * 100 : null)
           : null
+        const arrowColor = convColor(loading ? null : pct)
 
         return (
           <Fragment key={stage.key}>
-            <div className="kpi-card" style={{ '--stage-color': stage.color }}>
-              <div className="kpi-emoji">{stage.emoji}</div>
-              <div className="kpi-label">{stage.label}</div>
-              <div className="kpi-value">
-                {loading ? '—' : count.toLocaleString()}
+            <article className="pm-card" style={{ '--c': stage.color }}>
+              <div className="pm-card__stat">
+                <div className="pm-card__head">
+                  <span className="pm-card__emoji">{stage.emoji}</span>
+                  <span className="pm-card__label">{stage.label}</span>
+                </div>
+                <div className="pm-card__value">
+                  {loading ? '—' : count.toLocaleString()}
+                </div>
+                <div className="pm-card__badge-slot">
+                  {stage.uniqueByEmail && (
+                    <span className="pm-badge" title="Counted as unique people — distinct email per stage">
+                      ◦ unique people
+                    </span>
+                  )}
+                </div>
               </div>
-              {stage.uniqueByEmail && (
-                <span className="metric-badge">unique · by email</span>
-              )}
-              <p className="kpi-desc">{stage.legend}</p>
-            </div>
+              <p className="pm-card__desc">{stage.legend}</p>
+            </article>
 
             {nextStage && (
-              <div className="kpi-arrow" aria-hidden="false">
-                <span
-                  className="kpi-arrow-pct"
-                  style={{ color: convColor(loading ? null : pct) }}
-                >
+              <div className="pm-conn">
+                <span className="pm-conn__pct" style={{ color: arrowColor }}>
                   {loading ? '—' : pct === null ? 'n/a' : `${pct.toFixed(1)}%`}
                 </span>
-                <svg width="34" height="16" viewBox="0 0 34 16" fill="none"
-                     stroke="currentColor" strokeWidth="2"
-                     style={{ color: convColor(loading ? null : pct) }}>
-                  <line x1="2" y1="8" x2="28" y2="8" />
-                  <polyline points="24 3 30 8 24 13" />
+                <svg className="pm-conn__arrow" width="48" height="12" viewBox="0 0 48 12"
+                     fill="none" stroke={arrowColor} strokeWidth="1.75"
+                     strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="2" y1="6" x2="40" y2="6" strokeDasharray="3 3" opacity="0.55" />
+                  <polyline points="38 1.5 45 6 38 10.5" />
                 </svg>
-                <span className="kpi-arrow-label">converted</span>
               </div>
             )}
           </Fragment>
