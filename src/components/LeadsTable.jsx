@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { STAGE_MAP } from '../constants/stages'
+import ExportButton from './ExportButton'
 
 const COLUMNS = [
   { key: 'full_name',  label: 'Name',      sortable: true  },
@@ -25,7 +26,7 @@ export function fullName(lead) {
     .join(' ')
 }
 
-export default function LeadsTable({ rows, total, page, totalPages, setPage, loading }) {
+export default function LeadsTable({ rows, total, page, totalPages, setPage, loading, exportParams, exportName = 'leads' }) {
   const [sortKey, setSortKey] = useState('created_at')
   const [sortDir, setSortDir] = useState('desc')
 
@@ -50,9 +51,19 @@ export default function LeadsTable({ rows, total, page, totalPages, setPage, loa
     <div className="table-section">
       <div className="table-header">
         <span className="table-title">📋 Leads</span>
-        <span className="table-count">
-          {loading ? 'Loading…' : `${start}–${end} of ${total?.toLocaleString()} leads`}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto' }}>
+          <span className="table-count">
+            {loading ? 'Loading…' : `${start}–${end} of ${total?.toLocaleString()} leads`}
+          </span>
+          {exportParams && (
+            <ExportButton
+              label="⬇ Export CSV"
+              filename={exportName}
+              title="Download every lead matching the current filters (unique by email)"
+              params={exportParams}
+            />
+          )}
+        </div>
       </div>
 
       {loading ? (

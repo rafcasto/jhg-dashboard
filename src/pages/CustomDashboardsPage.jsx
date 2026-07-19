@@ -378,7 +378,13 @@ export default function CustomDashboardsPage() {
                 )}
                 {chartView === 'bar'   && <CustomBarChart   stages={stagesWithCounts} />}
                 {chartView === 'donut' && <CustomDonutChart stages={stagesWithCounts} />}
-                {chartView === 'table' && <CustomTableView  stages={stagesWithCounts} />}
+                {chartView === 'table' && (
+                  <CustomTableView
+                    stages={stagesWithCounts}
+                    filters={filters}
+                    namePrefix={selected.name}
+                  />
+                )}
               </>
             )}
           </div>

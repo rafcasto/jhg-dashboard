@@ -57,8 +57,8 @@ export default function DashboardPage() {
       {/* Filters */}
       <FilterBar filters={filters} onChange={setFilters} />
 
-      {/* KPI Cards — 6 across */}
-      <KPICards metrics={metrics} loading={metricsLoading} />
+      {/* KPI Cards — 6 across, each with a per-stage CSV export */}
+      <KPICards metrics={metrics} loading={metricsLoading} filters={filters} />
 
       {/* Chart section */}
       <div className="chart-section">
@@ -91,7 +91,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Leads table */}
+      {/* Leads table — with a CSV export honouring the current filters */}
       <LeadsTable
         rows={leadsData.rows}
         total={leadsData.total}
@@ -99,6 +99,14 @@ export default function DashboardPage() {
         totalPages={leadsData.totalPages}
         setPage={leadsData.setPage}
         loading={leadsData.loading}
+        exportParams={{
+          stage:         filters.stage  || undefined,
+          source:        filters.source || undefined,
+          startDate:     filters.startDate || undefined,
+          endDate:       filters.endDate   || undefined,
+          uniqueByEmail: true,
+        }}
+        exportName={filters.stage ? `${filters.stage}-leads` : 'all-leads'}
       />
     </div>
   )

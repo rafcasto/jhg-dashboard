@@ -1,11 +1,16 @@
+import ExportButton from '../ExportButton'
+
 /**
  * Table view for custom funnels — one row per stage with the raw count
  * (each lead is counted once, in its current stage), share of top,
- * conversion from previous stage, and the tags mapped to the stage.
+ * conversion from previous stage, the tags mapped to the stage, and a
+ * per-stage CSV export of the (unique) leads sitting in that stage.
  *
- * stages: [{ key, label, emoji, color, count, tags }]
+ * stages:  [{ key, label, emoji, color, count, tags }]
+ * filters: { startDate, endDate }  — scopes the export to the same window
+ * namePrefix: string               — prepended to export filenames
  */
-export default function CustomTableView({ stages }) {
+export default function CustomTableView({ stages, filters = {}, namePrefix = '' }) {
   if (!stages?.length) return <div className="empty-state"><p>No stages defined yet</p></div>
 
   const top = Math.max(1, stages[0]?.count ?? 0)
@@ -30,6 +35,7 @@ export default function CustomTableView({ stages }) {
             <th style={th}>% of top</th>
             <th style={th}>Conv. from prev</th>
             <th style={{ ...th, textAlign: 'left' }}>Tags mapped</th>
+            <th style={{ ...th, textAlign: 'center' }}>Export</th>
           </tr>
         </thead>
         <tbody>
@@ -71,6 +77,20 @@ export default function CustomTableView({ stages }) {
                           </span>
                         ))}
                   </div>
+                </td>
+                <td style={{ ...td, textAlign: 'center' }}>
+                  <ExportButton
+                    label="⬇ CSV"
+                    filename={[namePrefix, s.label, 'leads'].filter(Boolean).join('-')}
+                    title={`Download unique leads in "${s.label}" as CSV`}
+                    style={{ padding: '5px 12px', fontSize: 11 }}
+                    params={{
+                      tags:          s.tags ?? [],
+                      startDate:     filters.startDate || undefined,
+                      endDate:       filters.endDate   || undefined,
+                      uniqueByEmail: true,
+                    }}
+                  />
                 </td>
               </tr>
             )

@@ -1,5 +1,6 @@
 import { Fragment } from 'react'
 import { STAGES } from '../constants/stages'
+import ExportButton from './ExportButton'
 
 /**
  * AAARRR funnel KPI cards.
@@ -7,14 +8,15 @@ import { STAGES } from '../constants/stages'
  * Each card has a FIXED-HEIGHT stat zone (emoji · label · value · badge
  * slot) so every number sits on the same baseline across the row — which
  * lets the conversion arrows in the gaps align exactly to the numbers they
- * connect. A hairline divider separates the metric from its definition.
+ * connect. A hairline divider separates the metric from its definition,
+ * and a per-stage CSV export button sits at the bottom of each card.
  */
 function convColor(pct) {
   if (pct === null) return 'var(--fg-3)'
   return pct < 20 ? '#dc2626' : pct < 50 ? '#f08a1c' : '#22c55e'
 }
 
-export default function KPICards({ metrics, loading }) {
+export default function KPICards({ metrics, loading, filters = {} }) {
   return (
     <div className="pm-funnel">
       {STAGES.map((stage, i) => {
@@ -48,6 +50,19 @@ export default function KPICards({ metrics, loading }) {
                 </div>
               </div>
               <p className="pm-card__desc">{stage.legend}</p>
+              <ExportButton
+                className="pm-card__export"
+                label="⬇ Export CSV"
+                filename={`${stage.label}-leads`}
+                title={`Download unique ${stage.label} leads as CSV`}
+                params={{
+                  stage:        stage.key,
+                  source:       filters.source    || undefined,
+                  startDate:    filters.startDate || undefined,
+                  endDate:      filters.endDate   || undefined,
+                  uniqueByEmail: true,
+                }}
+              />
             </article>
 
             {nextStage && (
