@@ -7,6 +7,7 @@ import DashboardPage from './pages/DashboardPage'
 import CustomDashboardsPage from './pages/CustomDashboardsPage'
 import TargetsPage from './pages/TargetsPage'
 import IntentScoringPage from './pages/IntentScoringPage'
+import PeoplePage from './pages/PeoplePage'
 import UsersPage from './pages/UsersPage'
 
 function App() {
@@ -26,6 +27,7 @@ function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/custom" element={<CustomDashboardsPage />} />
             <Route path="/targets" element={<TargetsPage />} />
+            <Route path="/people" element={<PeoplePage />} />
             <Route path="/intent" element={<IntentScoringPage />} />
             <Route path="/users" element={<UsersPage />} />
           </Route>
