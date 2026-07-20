@@ -134,3 +134,54 @@ export function useIntentDistribution({ startDate, endDate } = {}) {
 
   return { data, loading, error }
 }
+
+/**
+ * Inactivity decay tiers.
+ *
+ * Buying intent is perishable — someone who opened coaching last week
+ * isn't the prospect someone who did it a year ago is. The highest
+ * matching tier applies (penalties are not cumulative), and decay
+ * erodes a positive score toward 0 without ever flipping its sign.
+ */
+export function useDecayRules() {
+  const [rules, setRules]     = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState(null)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    const { data, error: err } = await supabase
+      .from('lead_intent_decay_rules')
+      .select('*')
+      .order('min_months')
+    if (err) { setError(err.message); setLoading(false); return }
+    setRules(data ?? [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  const saveRule = useCallback(async (rule) => {
+    const payload = {
+      label:      rule.label,
+      min_months: Number(rule.min_months),
+      penalty:    Number(rule.penalty),
+      enabled:    rule.enabled,
+      updated_at: new Date().toISOString(),
+    }
+    const { error: err } = rule.id
+      ? await supabase.from('lead_intent_decay_rules').update(payload).eq('id', rule.id)
+      : await supabase.from('lead_intent_decay_rules').insert(payload)
+    if (err) throw new Error(err.message)
+    await refresh()
+  }, [refresh])
+
+  const deleteRule = useCallback(async (id) => {
+    const { error: err } = await supabase.from('lead_intent_decay_rules').delete().eq('id', id)
+    if (err) throw new Error(err.message)
+    await refresh()
+  }, [refresh])
+
+  return { rules, loading, error, refresh, saveRule, deleteRule }
+}

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { STAGE_MAP } from '../constants/stages'
 import { INTENT_BANDS, intentBand } from '../constants/intent'
-import { useIntentScoring, useIntentDistribution } from '../hooks/useIntentScoring'
+import { useIntentScoring, useIntentDistribution, useDecayRules } from '../hooks/useIntentScoring'
 
 // churn isn't in STAGES (it's not a pirate metric) — give it a look here
 const CHURN_META = { label: 'Churn', emoji: '🪦', color: '#dc2626' }
@@ -552,6 +552,148 @@ function PatternRules({ rules, saveRule, deleteRule }) {
 }
 
 // ============================================================
+// Inactivity decay — intent is perishable
+// ============================================================
+const BLANK_TIER = { label: '', min_months: 3, penalty: -10, enabled: true }
+
+function DecaySection() {
+  const { rules, loading, saveRule, deleteRule } = useDecayRules()
+  const [editing, setEditing] = useState(null)
+  const [busy, setBusy]       = useState(false)
+  const [error, setError]     = useState(null)
+
+  async function commit() {
+    if (!editing.label.trim())            { setError('Name the tier.'); return }
+    if (Number(editing.min_months) <= 0)  { setError('Months must be greater than 0.'); return }
+    if (Number(editing.penalty)   >  0)   { setError('Penalty must be 0 or negative.'); return }
+    setBusy(true); setError(null)
+    try {
+      await saveRule({ ...editing, label: editing.label.trim() })
+      setEditing(null)
+    } catch (e) { setError(e.message) }
+    setBusy(false)
+  }
+
+  async function remove(r) {
+    if (!window.confirm(`Delete the "${r.label}" tier?`)) return
+    setBusy(true); setError(null)
+    try { await deleteRule(r.id) } catch (e) { setError(e.message) }
+    setBusy(false)
+  }
+
+  return (
+    <div className="chart-section" style={{ marginTop: 20 }}>
+      <div className="chart-section-header">
+        <h2 className="chart-section-title">
+          4 · Inactivity decay
+          <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--fg-3)', marginTop: 4 }}>
+            Points deducted when someone goes quiet. The highest matching tier applies —
+            penalties don’t stack. Applies to People, not to individual events.
+          </span>
+        </h2>
+        {!editing && (
+          <button className="chart-toggle-btn active" onClick={() => setEditing({ ...BLANK_TIER })}>
+            + New tier
+          </button>
+        )}
+      </div>
+
+      {error && <div style={{ color: '#dc2626', fontSize: 13, marginBottom: 10 }}>{error}</div>}
+
+      {editing && (
+        <div style={{
+          border: '1px solid var(--jh-line)', borderRadius: 'var(--radius-md)',
+          padding: 16, marginBottom: 16, background: 'var(--bg-soft)',
+          display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end',
+        }}>
+          <div className="filter-group">
+            <label className="filter-label">Tier name</label>
+            <input type="text" className="filter-input" placeholder="e.g. Going quiet"
+              value={editing.label} onChange={e => setEditing(r => ({ ...r, label: e.target.value }))}
+              style={{ width: 200 }} />
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Inactive for (months)</label>
+            <input type="number" min="1" className="filter-input"
+              value={editing.min_months} onChange={e => setEditing(r => ({ ...r, min_months: e.target.value }))}
+              style={{ width: 110, textAlign: 'right' }} />
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Penalty (negative)</label>
+            <input type="number" max="0" className="filter-input"
+              value={editing.penalty} onChange={e => setEditing(r => ({ ...r, penalty: e.target.value }))}
+              style={{ width: 110, textAlign: 'right' }} />
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Enabled</label>
+            <input type="checkbox" checked={editing.enabled}
+              onChange={e => setEditing(r => ({ ...r, enabled: e.target.checked }))}
+              style={{ width: 18, height: 18 }} />
+          </div>
+          <div style={{ flex: 1 }} />
+          <button className="chart-toggle-btn" onClick={() => setEditing(null)}>Cancel</button>
+          <button className="chart-toggle-btn active" disabled={busy} onClick={commit}>
+            {busy ? 'Saving…' : '💾 Save tier'}
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="spinner-wrap"><div className="spinner" /></div>
+      ) : (
+        <div style={{ border: '1px solid var(--jh-line)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 200px 110px 120px',
+            gap: 16, padding: '10px 16px', background: 'var(--bg-soft)',
+            fontSize: 11, fontWeight: 700, letterSpacing: '0.5px',
+            textTransform: 'uppercase', color: 'var(--fg-3)',
+          }}>
+            <div>Tier</div><div>Applies after</div>
+            <div style={{ textAlign: 'right' }}>Penalty</div>
+            <div style={{ textAlign: 'right' }}>Actions</div>
+          </div>
+
+          {rules.length === 0 && (
+            <div className="empty-state"><p>No decay tiers — intent never expires.</p></div>
+          )}
+
+          {rules.map(r => (
+            <div key={r.id} style={{
+              display: 'grid', gridTemplateColumns: '1fr 200px 110px 120px',
+              gap: 16, alignItems: 'center', padding: '10px 16px',
+              borderBottom: '1px solid var(--jh-line)', opacity: r.enabled ? 1 : 0.45,
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                {r.label}
+                {!r.enabled && <span style={{ fontSize: 11, color: 'var(--fg-4)' }}> · disabled</span>}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+                {r.min_months} month{r.min_months === 1 ? '' : 's'} of silence
+              </div>
+              <div style={{
+                textAlign: 'right', fontFamily: 'var(--font-display)',
+                fontWeight: 800, fontSize: 16, color: '#dc2626',
+              }}>
+                {r.penalty}
+              </div>
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                <button className="chart-toggle-btn" onClick={() => setEditing({ ...r })}>✏️</button>
+                <button className="chart-toggle-btn" disabled={busy} onClick={() => remove(r)}>🗑</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 10, lineHeight: 1.5 }}>
+        Decay erodes a positive score toward 0 but never past it — only the churn stage
+        goes negative. A churned person who is also dormant gets both.
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
 // Page
 // ============================================================
 export default function IntentScoringPage() {
@@ -606,6 +748,7 @@ export default function IntentScoringPage() {
             setOnlyUnscored={setOnlyUnscored}
           />
           <PatternRules rules={rules} saveRule={saveRule} deleteRule={deleteRule} />
+          <DecaySection />
         </>
       )}
     </div>

@@ -12,6 +12,7 @@ const SORTS = [
   { key: 'interactions', label: '⚡ Interactions' },
   { key: 'last_seen',    label: '🕐 Last seen' },
   { key: 'first_seen',   label: '📅 First seen' },
+  { key: 'decayed',      label: '🥶 Most decayed' },
 ]
 
 function fmtDate(iso) {
@@ -68,7 +69,6 @@ function Timeline({ email, data, loading }) {
 
   const events = data.timeline ?? []
   const person = data.person ?? {}
-  const stageWeight = Number(person.intent_score ?? 0) - Number(person.tag_points ?? 0)
 
   return (
     <div style={{ padding: '16px 20px 20px', background: 'var(--bg-soft)' }}>
@@ -142,7 +142,8 @@ function Timeline({ email, data, loading }) {
       {/* Arithmetic, so the score is auditable */}
       <div style={{
         marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--jh-line)',
-        display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 12, color: 'var(--fg-2)',
+        display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 12, color: 'var(--fg-2)',
+        alignItems: 'center',
       }}>
         <span>
           Stage <strong>{person.effective_stage}</strong>
@@ -151,12 +152,27 @@ function Timeline({ email, data, loading }) {
             : person.furthest_stage !== person.latest_stage
               ? ` (furthest reached; latest event was ${person.latest_stage})`
               : ''}
-          {' '}<strong>{stageWeight > 0 ? `+${stageWeight}` : stageWeight}</strong>
         </span>
-        <span>+ distinct tags <strong>{person.tag_points > 0 ? `+${person.tag_points}` : person.tag_points}</strong></span>
-        <span>= intent <strong style={{ color: intentBand(person.intent_score).color }}>
-          {person.intent_score > 0 ? `+${person.intent_score}` : person.intent_score}
-        </strong></span>
+        <span>
+          + distinct tags{' '}
+          <strong>{person.tag_points > 0 ? `+${person.tag_points}` : person.tag_points}</strong>
+        </span>
+        <span>
+          = subtotal{' '}
+          <strong>{person.intent_before_decay > 0 ? `+${person.intent_before_decay}` : person.intent_before_decay}</strong>
+        </span>
+        {person.decay_penalty !== 0 && (
+          <span style={{ color: '#dc2626' }}>
+            − inactive {person.months_inactive} mo{' '}
+            <strong>{person.decay_penalty}</strong>
+          </span>
+        )}
+        <span>
+          = intent{' '}
+          <strong style={{ color: intentBand(person.intent_score).color, fontSize: 14 }}>
+            {person.intent_score > 0 ? `+${person.intent_score}` : person.intent_score}
+          </strong>
+        </span>
       </div>
     </div>
   )
@@ -300,7 +316,17 @@ export default function PeoplePage() {
                         <td style={{ textAlign: 'right', fontWeight: 700 }}>{p.interaction_count}</td>
                         <td style={{ textAlign: 'right', color: 'var(--fg-3)' }}>{p.distinct_tags}</td>
                         <td style={{ color: 'var(--fg-3)', fontSize: 12 }}>{fmtDate(p.first_seen)}</td>
-                        <td style={{ color: 'var(--fg-3)', fontSize: 12 }}>{fmtDate(p.last_seen)}</td>
+                        <td style={{ color: 'var(--fg-3)', fontSize: 12 }}>
+                          {fmtDate(p.last_seen)}
+                          {p.is_decayed && (
+                            <div
+                              style={{ fontSize: 10, color: '#dc2626', marginTop: 3, fontWeight: 700 }}
+                              title={`Inactive ${p.months_inactive} months — intent decayed by ${p.decay_penalty} from ${p.intent_before_decay}`}
+                            >
+                              🥶 {p.months_inactive} mo · {p.decay_penalty}
+                            </div>
+                          )}
+                        </td>
                         <td><IntentPill score={p.intent_score} /></td>
                       </tr>,
                       open && (

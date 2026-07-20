@@ -1,35 +1,97 @@
 -- ============================================================
--- Migration 014: People view — unique leads and their interactions
+-- Migration 015: Inactivity decay
 --
--- public.jobhackers_leads is an EVENT LOG, not a lead table:
--- ~1,706 rows represent ~1,536 people. Each row is one interaction.
--- Migration 013 scores a single ROW, which is the wrong grain for
--- "who should I contact today". This adds the person grain.
+-- Buying intent is perishable. Someone who completed the quiz and
+-- opened coaching last week is not the same prospect as someone who
+-- did it a year ago and has been silent since — but until now they
+-- scored identically.
 --
--- Person-level rules:
---   • identity  — most recent non-null name/location/archetype wins
---   • stage     — the FURTHEST stage ever reached, not the latest one.
---                 Event stages are not monotonic (clicking an old
---                 onboarding email logs an 'activation' row long after
---                 someone reached 'retention'), so "latest" would
---                 demote your most engaged people.
---   • churn     — overrides the above. If the MOST RECENT event is
---                 'churn', the person is churned and scores negative.
---                 Churn is a state you are in, not a milestone passed.
---   • tags      — DISTINCT behaviours only. Five webinar RSVPs score
---                 +5 once, not +25. 1,475 of 1,706 rows are RSVPs, so
---                 cumulative scoring would flood the top of the list
---                 with people who never touched the product.
+-- Decay applies at the PERSON grain only, based on last_seen.
+-- Row-level scores are untouched: a row is a single event with a fixed
+-- date, so "this event was worth +20" stays true forever. It's the
+-- PERSON who goes cold, not the event.
+--
+-- The invariant from 013 is preserved: decay reduces a positive score
+-- toward 0 but never flips its sign. Only the churn stage goes negative.
 -- ============================================================
 
 
 -- ------------------------------------------------------------
--- 1. Split the churn/positive rule out so row-level and person-level
---    scoring share one definition instead of drifting apart.
+-- 1. Decay tiers — highest matching tier wins (not cumulative)
 -- ------------------------------------------------------------
-create or replace function public.compute_intent_from_parts(
+create table if not exists public.lead_intent_decay_rules (
+  id         uuid primary key default gen_random_uuid(),
+  label      text not null,
+  min_months int  not null check (min_months > 0),
+  penalty    int  not null check (penalty <= 0),
+  enabled    boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists lead_intent_decay_rules_months_uq
+  on public.lead_intent_decay_rules (min_months);
+
+comment on table public.lead_intent_decay_rules is
+  'Inactivity penalties by months since last interaction. Highest matching tier applies; penalties are negative.';
+
+insert into public.lead_intent_decay_rules (label, min_months, penalty) values
+  ('Going quiet',  3,  -10),
+  ('Cold',         6,  -25),
+  ('Dormant',     12,  -40)
+on conflict (min_months) do nothing;
+
+
+-- ------------------------------------------------------------
+-- 2. Resolve the penalty for a given last-seen timestamp
+-- ------------------------------------------------------------
+create or replace function public.lead_decay_penalty(p_last_seen timestamptz)
+returns int
+language sql
+stable
+as $$
+  select coalesce((
+    select r.penalty
+    from public.lead_intent_decay_rules r
+    where r.enabled
+      and p_last_seen is not null
+      and p_last_seen <= now() - make_interval(months => r.min_months)
+    order by r.min_months desc
+    limit 1
+  ), 0)::int;
+$$;
+
+-- Whole COMPLETED calendar months since the last interaction.
+--
+-- Must use the same calendar arithmetic as lead_decay_penalty, which
+-- compares against make_interval(months => n). A 30-day approximation
+-- diverges: 89 days is 2.97 "months", and ::int ROUNDS that to 3, so a
+-- lead would read "3 months inactive" while correctly taking no penalty.
+-- age() + year*12+month floors to completed months and lines the two up.
+create or replace function public.lead_months_inactive(p_last_seen timestamptz)
+returns int
+language sql
+stable
+as $$
+  select case
+           when p_last_seen is null then 0
+           else greatest(0, (
+             extract(year  from age(now(), p_last_seen))::int * 12 +
+             extract(month from age(now(), p_last_seen))::int
+           ))
+         end;
+$$;
+
+
+-- ------------------------------------------------------------
+-- 3. Person-level scoring, decay included.
+--    Separate name from compute_intent_from_parts so the 2-arg
+--    row-level function keeps working with no signature ambiguity.
+-- ------------------------------------------------------------
+create or replace function public.compute_person_intent(
   p_stage      text,
-  p_tag_points int
+  p_tag_points int,
+  p_decay      int
 )
 returns int
 language sql
@@ -40,33 +102,20 @@ as $$
              (select w.weight from public.lead_intent_stage_weights w
                where w.stage_key = p_stage),
              0
-           ) + coalesce(p_tag_points, 0) as raw
+           ) + coalesce(p_tag_points, 0) + coalesce(p_decay, 0) as raw
   )
   select case
            when p_stage = 'churn' then least(-abs(raw), -1)
-           else greatest(raw, 0)
+           else greatest(raw, 0)     -- decay erodes toward 0, never past it
          end::int
   from base;
 $$;
 
--- Row-level scoring now delegates, so the invariants can't diverge
-create or replace function public.compute_lead_intent(p_stage text, p_tag text)
-returns int
-language sql
-stable
-as $$
-  select public.compute_intent_from_parts(p_stage, public.lead_tag_weight(p_tag));
-$$;
-
 
 -- ------------------------------------------------------------
--- 2. The people view — one row per unique email
---
--- DROP then CREATE, not CREATE OR REPLACE: migration 015 appends decay
--- columns to this view, and CREATE OR REPLACE VIEW cannot remove columns.
--- Since the migration runner replays every file in order on each run,
--- replacing in place would fail with "cannot drop columns from view"
--- on any run after 015 has been applied.
+-- 4. Rebuild the people view with decay applied
+--    (drop first: intent_score changes meaning and new columns are
+--     inserted mid-list, which CREATE OR REPLACE VIEW disallows)
 -- ------------------------------------------------------------
 drop view if exists public.lead_people;
 
@@ -89,14 +138,12 @@ ev as (
   join stage_ord so on so.stage_key = l.stage::text
   where l.email is not null and btrim(l.email) <> ''
 ),
--- Most recent event decides churn status
 latest as (
   select distinct on (person_email)
     person_email, stage_key as latest_stage, created_at as latest_at
   from ev
   order by person_email, created_at desc, id desc
 ),
--- Deepest non-churn stage ever reached
 furthest as (
   select distinct on (person_email)
     person_email, stage_key as furthest_stage, stage_ord as furthest_ord
@@ -104,7 +151,6 @@ furthest as (
   where stage_key <> 'churn'
   order by person_email, stage_ord desc, created_at desc
 ),
--- DISTINCT tag behaviours only — each scores once
 tagpts as (
   select person_email, coalesce(sum(w), 0)::int as tag_points
   from (
@@ -114,7 +160,6 @@ tagpts as (
   ) d
   group by person_email
 ),
--- Identity: newest non-null value for each field
 ident as (
   select
     person_email,
@@ -151,18 +196,25 @@ select
   l.latest_stage,
   coalesce(f.furthest_stage, l.latest_stage)            as furthest_stage,
   (l.latest_stage = 'churn')                            as is_churned,
-  -- The stage the person is actually scored on
   case when l.latest_stage = 'churn'
        then 'churn'
        else coalesce(f.furthest_stage, l.latest_stage)
   end                                                   as effective_stage,
   coalesce(t.tag_points, 0)                             as tag_points,
-  public.compute_intent_from_parts(
-    case when l.latest_stage = 'churn'
-         then 'churn'
-         else coalesce(f.furthest_stage, l.latest_stage)
-    end,
-    coalesce(t.tag_points, 0)
+  public.lead_months_inactive(i.last_seen)              as months_inactive,
+  public.lead_decay_penalty(i.last_seen)                as decay_penalty,
+  (public.lead_decay_penalty(i.last_seen) <> 0)         as is_decayed,
+  -- Score before decay, so the UI can show what inactivity cost
+  public.compute_person_intent(
+    case when l.latest_stage = 'churn' then 'churn'
+         else coalesce(f.furthest_stage, l.latest_stage) end,
+    coalesce(t.tag_points, 0), 0
+  )                                                     as intent_before_decay,
+  public.compute_person_intent(
+    case when l.latest_stage = 'churn' then 'churn'
+         else coalesce(f.furthest_stage, l.latest_stage) end,
+    coalesce(t.tag_points, 0),
+    public.lead_decay_penalty(i.last_seen)
   )                                                     as intent_score
 from ident i
 join      latest   l on l.person_email = i.person_email
@@ -170,11 +222,13 @@ left join furthest f on f.person_email = i.person_email
 left join tagpts   t on t.person_email = i.person_email;
 
 comment on view public.lead_people is
-  'One row per unique email. Stage = furthest reached (churn overrides), tags counted distinctly.';
+  'One row per unique email. Stage = furthest reached (churn overrides), tags distinct, intent decayed by inactivity.';
+
+grant select on public.lead_people to authenticated, service_role;
 
 
 -- ------------------------------------------------------------
--- 3. Paginated people list
+-- 5. Recreate dependents dropped with the view
 -- ------------------------------------------------------------
 create or replace function public.get_people_list(
   p_search     text        default null,
@@ -215,12 +269,14 @@ as $$
           case when p_sort = 'interactions' then interaction_count end desc nulls last,
           case when p_sort = 'last_seen'    then last_seen         end desc nulls last,
           case when p_sort = 'first_seen'   then first_seen        end desc nulls last,
+          case when p_sort = 'decayed'      then decay_penalty     end asc  nulls last,
           intent_score desc, last_seen desc
         limit p_limit offset p_offset
       ) t
     ),
-    'total',       (select count(*)::int from filtered),
-    'total_people',(select count(*)::int from public.lead_people)
+    'total',        (select count(*)::int from filtered),
+    'total_people', (select count(*)::int from public.lead_people),
+    'total_decayed',(select count(*)::int from public.lead_people where is_decayed)
   );
 $$;
 
@@ -229,64 +285,6 @@ grant execute on function public.get_people_list(text, text, text, timestamptz, 
   to authenticated, service_role;
 
 
--- ------------------------------------------------------------
--- 4. One person's full interaction timeline
---    Flags repeats: with distinct scoring, only the FIRST occurrence
---    of a tag contributes points. The UI shows the rest as +0 repeats
---    so the arithmetic is auditable.
--- ------------------------------------------------------------
-create or replace function public.get_person_timeline(p_email text)
-returns json
-language sql
-security definer
-set search_path = public
-stable
-as $$
-  with ev as (
-    select
-      l.id,
-      l.created_at,
-      l.stage::text               as stage,
-      l.source,
-      l.tag,
-      public.normalize_tag(l.tag) as ntag,
-      l.score                     as quiz_score,
-      row_number() over (
-        partition by public.normalize_tag(l.tag)
-        order by l.created_at, l.id
-      ) as occurrence
-    from public.jobhackers_leads l
-    where lower(btrim(l.email)) = lower(btrim(p_email))
-  )
-  select json_build_object(
-    'email', lower(btrim(p_email)),
-    'person', (select row_to_json(p) from public.lead_people p
-                where p.email = lower(btrim(p_email))),
-    'timeline', (
-      select coalesce(json_agg(row_to_json(t) order by t.created_at), '[]'::json)
-      from (
-        select
-          e.id, e.created_at, e.stage, e.source, e.tag, e.ntag, e.quiz_score,
-          e.occurrence,
-          (e.ntag is not null and e.occurrence = 1)            as counted,
-          coalesce(public.lead_tag_weight(e.ntag), 0)          as tag_weight,
-          case when e.ntag is not null and e.occurrence = 1
-               then coalesce(public.lead_tag_weight(e.ntag), 0)
-               else 0 end                                     as points_contributed,
-          public.lead_intent_matched_rules(e.ntag)             as matched_rules
-        from ev e
-      ) t
-    )
-  );
-$$;
-
-revoke all on function public.get_person_timeline(text) from public;
-grant execute on function public.get_person_timeline(text) to authenticated, service_role;
-
-
--- ------------------------------------------------------------
--- 5. Person-grain band distribution (mirrors lead_intent_distribution)
--- ------------------------------------------------------------
 create or replace function public.people_intent_distribution()
 returns json
 language sql
@@ -322,5 +320,21 @@ revoke all on function public.people_intent_distribution() from public;
 grant execute on function public.people_intent_distribution() to authenticated, service_role;
 
 
-grant select on public.lead_people to authenticated, service_role;
-grant execute on function public.compute_intent_from_parts(text, int) to authenticated, service_role;
+-- ------------------------------------------------------------
+-- 6. RLS
+-- ------------------------------------------------------------
+alter table public.lead_intent_decay_rules enable row level security;
+
+drop policy if exists "authenticated read decay"  on public.lead_intent_decay_rules;
+drop policy if exists "authenticated write decay" on public.lead_intent_decay_rules;
+create policy "authenticated read decay"  on public.lead_intent_decay_rules
+  for select to authenticated using (true);
+create policy "authenticated write decay" on public.lead_intent_decay_rules
+  for all    to authenticated using (true) with check (true);
+
+grant select, insert, update, delete on public.lead_intent_decay_rules to authenticated;
+grant all on public.lead_intent_decay_rules to service_role;
+
+grant execute on function public.lead_decay_penalty(timestamptz)          to authenticated, service_role;
+grant execute on function public.lead_months_inactive(timestamptz)        to authenticated, service_role;
+grant execute on function public.compute_person_intent(text, int, int)    to authenticated, service_role;
