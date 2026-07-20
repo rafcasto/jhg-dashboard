@@ -52,7 +52,7 @@ export function useIntentScoring() {
    * Set an explicit weight for one normalised tag.
    * Creates/updates an 'exact' rule, which overrides any broad pattern rule.
    */
-  const setTagWeight = useCallback(async (normalizedTag, weight, label) => {
+  const setTagWeight = useCallback(async (normalizedTag, weight, label, mode = 'cumulative') => {
     const { error: err } = await supabase
       .from('lead_intent_tag_rules')
       .upsert({
@@ -60,6 +60,28 @@ export function useIntentScoring() {
         pattern:    normalizedTag,
         match_type: 'exact',
         weight,
+        count_mode: mode,
+        enabled:    true,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'match_type,pattern' })
+    if (err) throw new Error(err.message)
+    await refresh()
+  }, [refresh])
+
+  /**
+   * Pin a count mode for one tag. Like setTagWeight, this writes an 'exact'
+   * rule (carrying the tag's current weight) so the mode overrides any
+   * pattern rule — the same precedence weight edits already use.
+   */
+  const setTagMode = useCallback(async (normalizedTag, mode, currentWeight, label) => {
+    const { error: err } = await supabase
+      .from('lead_intent_tag_rules')
+      .upsert({
+        label:      label || normalizedTag,
+        pattern:    normalizedTag,
+        match_type: 'exact',
+        weight:     currentWeight ?? 0,
+        count_mode: mode,
         enabled:    true,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'match_type,pattern' })
@@ -84,6 +106,7 @@ export function useIntentScoring() {
       pattern:    rule.pattern,
       match_type: rule.match_type,
       weight:     rule.weight,
+      count_mode: rule.count_mode ?? 'cumulative',
       enabled:    rule.enabled,
       updated_at: new Date().toISOString(),
     }
@@ -102,7 +125,7 @@ export function useIntentScoring() {
 
   return {
     stages, tags, rules, loading, error, refresh,
-    saveStageWeights, setTagWeight, clearTagWeight, saveRule, deleteRule,
+    saveStageWeights, setTagWeight, setTagMode, clearTagWeight, saveRule, deleteRule,
   }
 }
 

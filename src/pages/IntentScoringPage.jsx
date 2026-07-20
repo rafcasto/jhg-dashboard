@@ -227,7 +227,7 @@ function StageWeights({ stages, saveStageWeights }) {
 // ============================================================
 // Tag weights — every live tag, with inline override
 // ============================================================
-function TagWeights({ tags, setTagWeight, clearTagWeight, onlyUnscored, setOnlyUnscored }) {
+function TagWeights({ tags, setTagWeight, setTagMode, clearTagWeight, onlyUnscored, setOnlyUnscored }) {
   const [query, setQuery]     = useState('')
   const [editKey, setEditKey] = useState(null)
   const [draft, setDraft]     = useState('')
@@ -247,7 +247,7 @@ function TagWeights({ tags, setTagWeight, clearTagWeight, onlyUnscored, setOnlyU
   async function commit(tag) {
     setBusy(true); setError(null)
     try {
-      await setTagWeight(tag.tag, parseInt(draft || '0', 10) || 0, tag.tag)
+      await setTagWeight(tag.tag, parseInt(draft || '0', 10) || 0, tag.tag, tag.count_mode || 'cumulative')
       setEditKey(null)
     } catch (e) { setError(e.message) }
     setBusy(false)
@@ -256,6 +256,14 @@ function TagWeights({ tags, setTagWeight, clearTagWeight, onlyUnscored, setOnlyU
   async function reset(tag) {
     setBusy(true); setError(null)
     try { await clearTagWeight(tag.tag); setEditKey(null) }
+    catch (e) { setError(e.message) }
+    setBusy(false)
+  }
+
+  async function toggleMode(tag) {
+    const next = tag.count_mode === 'distinct' ? 'cumulative' : 'distinct'
+    setBusy(true); setError(null)
+    try { await setTagMode(tag.tag, next, tag.weight, tag.tag) }
     catch (e) { setError(e.message) }
     setBusy(false)
   }
@@ -307,7 +315,7 @@ function TagWeights({ tags, setTagWeight, clearTagWeight, onlyUnscored, setOnlyU
 
       <div style={{ border: '1px solid var(--jh-line)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
         <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 90px 220px 150px',
+          display: 'grid', gridTemplateColumns: '1fr 70px 190px 120px 150px',
           gap: 16, padding: '10px 16px', background: 'var(--bg-soft)',
           fontSize: 11, fontWeight: 700, letterSpacing: '0.5px',
           textTransform: 'uppercase', color: 'var(--fg-3)',
@@ -315,6 +323,7 @@ function TagWeights({ tags, setTagWeight, clearTagWeight, onlyUnscored, setOnlyU
           <div>Tag</div>
           <div style={{ textAlign: 'right' }}>Leads</div>
           <div>Scored by</div>
+          <div style={{ textAlign: 'center' }}>Count mode</div>
           <div style={{ textAlign: 'right' }}>Points</div>
         </div>
 
@@ -332,7 +341,7 @@ function TagWeights({ tags, setTagWeight, clearTagWeight, onlyUnscored, setOnlyU
 
           return (
             <div key={tag.tag} style={{
-              display: 'grid', gridTemplateColumns: '1fr 90px 220px 150px',
+              display: 'grid', gridTemplateColumns: '1fr 70px 190px 120px 150px',
               gap: 16, alignItems: 'center', padding: '12px 16px',
               borderBottom: '1px solid var(--jh-line)',
               background: unscored ? 'rgba(240,168,28,0.07)' : undefined,
@@ -358,6 +367,29 @@ function TagWeights({ tags, setTagWeight, clearTagWeight, onlyUnscored, setOnlyU
                   <span style={{ color: '#7a1ec2', fontWeight: 700 }}>📌 pinned override</span>
                 ) : (
                   rules.map(r => `${r.label} (${fmtWeight(r.weight)})`).join(' + ')
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                {tag.tag === UNTAGGED ? (
+                  <span style={{ fontSize: 11, color: 'var(--fg-4)' }}>—</span>
+                ) : (
+                  <button
+                    className="chart-toggle-btn"
+                    disabled={busy}
+                    onClick={() => toggleMode(tag)}
+                    title={
+                      tag.count_mode === 'distinct'
+                        ? 'Distinct — counts once no matter how often it recurs. Click to make cumulative.'
+                        : 'Cumulative — counts every time it recurs. Click to make distinct.'
+                    }
+                    style={{
+                      fontSize: 11, fontWeight: 700, minWidth: 104,
+                      color: tag.count_mode === 'distinct' ? '#0369a1' : '#7a1ec2',
+                    }}
+                  >
+                    {tag.count_mode === 'distinct' ? '×1 distinct' : 'Σ cumulative'}
+                  </button>
                 )}
               </div>
 
@@ -408,7 +440,7 @@ function TagWeights({ tags, setTagWeight, clearTagWeight, onlyUnscored, setOnlyU
 // ============================================================
 // Pattern rules — catch future tags automatically
 // ============================================================
-const BLANK_RULE = { label: '', pattern: '', match_type: 'like', weight: 0, enabled: true }
+const BLANK_RULE = { label: '', pattern: '', match_type: 'like', weight: 0, count_mode: 'cumulative', enabled: true }
 
 function PatternRules({ rules, saveRule, deleteRule }) {
   const [editing, setEditing] = useState(null)
@@ -484,6 +516,14 @@ function PatternRules({ rules, saveRule, deleteRule }) {
                 style={{ width: 90, textAlign: 'right' }} />
             </div>
             <div className="filter-group">
+              <label className="filter-label">Count mode</label>
+              <select className="filter-select" value={editing.count_mode}
+                onChange={e => setEditing(r => ({ ...r, count_mode: e.target.value }))}>
+                <option value="cumulative">Σ Cumulative — every time</option>
+                <option value="distinct">×1 Distinct — once</option>
+              </select>
+            </div>
+            <div className="filter-group">
               <label className="filter-label">Enabled</label>
               <input type="checkbox" checked={editing.enabled}
                 onChange={e => setEditing(r => ({ ...r, enabled: e.target.checked }))}
@@ -508,19 +548,20 @@ function PatternRules({ rules, saveRule, deleteRule }) {
 
       <div style={{ border: '1px solid var(--jh-line)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
         <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 260px 90px 120px',
+          display: 'grid', gridTemplateColumns: '1fr 230px 120px 90px 120px',
           gap: 16, padding: '10px 16px', background: 'var(--bg-soft)',
           fontSize: 11, fontWeight: 700, letterSpacing: '0.5px',
           textTransform: 'uppercase', color: 'var(--fg-3)',
         }}>
           <div>Rule</div><div>Pattern</div>
+          <div style={{ textAlign: 'center' }}>Mode</div>
           <div style={{ textAlign: 'right' }}>Points</div>
           <div style={{ textAlign: 'right' }}>Actions</div>
         </div>
 
         {likeRules.map(r => (
           <div key={r.id} style={{
-            display: 'grid', gridTemplateColumns: '1fr 260px 90px 120px',
+            display: 'grid', gridTemplateColumns: '1fr 230px 120px 90px 120px',
             gap: 16, alignItems: 'center', padding: '10px 16px',
             borderBottom: '1px solid var(--jh-line)', opacity: r.enabled ? 1 : 0.45,
           }}>
@@ -529,6 +570,10 @@ function PatternRules({ rules, saveRule, deleteRule }) {
             </div>
             <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, color: 'var(--fg-3)' }}>
               {r.pattern}
+            </div>
+            <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700,
+                          color: r.count_mode === 'distinct' ? '#0369a1' : '#7a1ec2' }}>
+              {r.count_mode === 'distinct' ? '×1 distinct' : 'Σ cumulative'}
             </div>
             <div style={{ textAlign: 'right', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 16, color: weightColor(r.weight) }}>
               {fmtWeight(r.weight)}
@@ -699,7 +744,7 @@ function DecaySection() {
 export default function IntentScoringPage() {
   const {
     stages, tags, rules, loading, error,
-    saveStageWeights, setTagWeight, clearTagWeight, saveRule, deleteRule,
+    saveStageWeights, setTagWeight, setTagMode, clearTagWeight, saveRule, deleteRule,
   } = useIntentScoring()
   const { data: distribution } = useIntentDistribution({})
   const [onlyUnscored, setOnlyUnscored] = useState(false)
@@ -743,6 +788,7 @@ export default function IntentScoringPage() {
           <TagWeights
             tags={tags}
             setTagWeight={setTagWeight}
+            setTagMode={setTagMode}
             clearTagWeight={clearTagWeight}
             onlyUnscored={onlyUnscored}
             setOnlyUnscored={setOnlyUnscored}
