@@ -15,6 +15,58 @@ function weightColor(w) {
 
 const fmtWeight = w => (w > 0 ? `+${w}` : String(w))
 
+// Leads with no tag at all aren't a scoring gap — there's nothing to score.
+const UNTAGGED = '(untagged)'
+
+/** A tag is "unscored" when no rule matches it, so it contributes 0 points. */
+export function isUnscored(tag) {
+  return tag.tag !== UNTAGGED && (tag.matched_rules ?? []).length === 0
+}
+
+// ============================================================
+// Unscored-tag alert — catches new tags that silently score 0
+// ============================================================
+function UnscoredBanner({ tags, onReview }) {
+  const unscored = tags.filter(isUnscored)
+  if (unscored.length === 0) return null
+
+  const leads = unscored.reduce((a, t) => a + t.lead_count, 0)
+  const preview = unscored.slice(0, 3).map(t => t.tag)
+
+  return (
+    <div style={{
+      border: '1px solid #f0a81c',
+      borderLeft: '4px solid #f0a81c',
+      background: 'rgba(240,168,28,0.08)',
+      borderRadius: 'var(--radius-md)',
+      padding: '14px 18px',
+      marginBottom: 20,
+      display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+    }}>
+      <div style={{ flex: 1, minWidth: 320 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+          ⚠️ {unscored.length} tag{unscored.length === 1 ? '' : 's'} {unscored.length === 1 ? 'is' : 'are'} unscored
+          {' '}— covering {leads.toLocaleString()} lead{leads === 1 ? '' : 's'}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--fg-2)', lineHeight: 1.45 }}>
+          No rule matches {unscored.length === 1 ? 'it' : 'them'}, so {unscored.length === 1 ? 'it adds' : 'they add'} 0
+          points. These leads still score from their stage — but if one of these is a
+          high-intent action, you’re under-scoring it.
+          <div style={{
+            fontFamily: 'var(--font-mono, monospace)', fontSize: 11,
+            color: 'var(--fg-3)', marginTop: 6,
+          }}>
+            {preview.join(' · ')}{unscored.length > 3 ? ` · +${unscored.length - 3} more` : ''}
+          </div>
+        </div>
+      </div>
+      <button className="chart-toggle-btn active" onClick={onReview}>
+        Review {unscored.length === 1 ? 'it' : 'them'} →
+      </button>
+    </div>
+  )
+}
+
 // ============================================================
 // Band legend — what the numbers mean
 // ============================================================
@@ -175,17 +227,22 @@ function StageWeights({ stages, saveStageWeights }) {
 // ============================================================
 // Tag weights — every live tag, with inline override
 // ============================================================
-function TagWeights({ tags, setTagWeight, clearTagWeight }) {
+function TagWeights({ tags, setTagWeight, clearTagWeight, onlyUnscored, setOnlyUnscored }) {
   const [query, setQuery]     = useState('')
   const [editKey, setEditKey] = useState(null)
   const [draft, setDraft]     = useState('')
   const [busy, setBusy]       = useState(false)
   const [error, setError]     = useState(null)
 
+  const unscoredCount = useMemo(() => tags.filter(isUnscored).length, [tags])
+
   const filtered = useMemo(() => {
+    let list = tags
+    if (onlyUnscored) list = list.filter(isUnscored)
     const q = query.trim().toUpperCase()
-    return q ? tags.filter(t => t.tag.includes(q)) : tags
-  }, [tags, query])
+    if (q) list = list.filter(t => t.tag.includes(q))
+    return list
+  }, [tags, query, onlyUnscored])
 
   async function commit(tag) {
     setBusy(true); setError(null)
@@ -204,7 +261,7 @@ function TagWeights({ tags, setTagWeight, clearTagWeight }) {
   }
 
   return (
-    <div className="chart-section" style={{ marginBottom: 20 }}>
+    <div className="chart-section" style={{ marginBottom: 20 }} id="tag-weights">
       <div className="chart-section-header">
         <h2 className="chart-section-title">
           2 · Tag weights
@@ -212,13 +269,41 @@ function TagWeights({ tags, setTagWeight, clearTagWeight }) {
             Every tag in your base. Setting a weight here pins that exact tag, overriding any pattern rule below.
           </span>
         </h2>
-        <input
-          type="text" className="filter-input" placeholder="Filter tags…"
-          value={query} onChange={e => setQuery(e.target.value)} style={{ width: 220 }}
-        />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {unscoredCount > 0 && (
+            <button
+              className={`chart-toggle-btn${onlyUnscored ? ' active' : ''}`}
+              onClick={() => setOnlyUnscored(v => !v)}
+              title="Show only tags that no rule matches"
+            >
+              ⚠️ Unscored ({unscoredCount})
+            </button>
+          )}
+          <input
+            type="text" className="filter-input" placeholder="Filter tags…"
+            value={query} onChange={e => setQuery(e.target.value)} style={{ width: 200 }}
+          />
+        </div>
       </div>
 
       {error && <div style={{ color: '#dc2626', fontSize: 13, marginBottom: 10 }}>{error}</div>}
+
+      {onlyUnscored && (
+        <div style={{ fontSize: 12, color: 'var(--fg-2)', marginBottom: 10 }}>
+          Showing only unscored tags. Give each one a weight below, or add a wildcard rule in
+          section 3 so future variants score automatically.
+          {' '}
+          <button
+            onClick={() => setOnlyUnscored(false)}
+            style={{
+              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              color: 'var(--jh-accent, #0033cc)', fontSize: 12, textDecoration: 'underline',
+            }}
+          >
+            Show all tags
+          </button>
+        </div>
+      )}
 
       <div style={{ border: '1px solid var(--jh-line)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
         <div style={{
@@ -234,12 +319,15 @@ function TagWeights({ tags, setTagWeight, clearTagWeight }) {
         </div>
 
         {filtered.length === 0 && (
-          <div className="empty-state"><p>No tags match “{query}”.</p></div>
+          <div className="empty-state">
+            <p>{onlyUnscored ? 'Every tag is scored. 🎉' : `No tags match “${query}”.`}</p>
+          </div>
         )}
 
         {filtered.map(tag => {
-          const rules    = tag.matched_rules ?? []
-          const isExact  = rules.some(r => r.match_type === 'exact')
+          const rules       = tag.matched_rules ?? []
+          const isExact     = rules.some(r => r.match_type === 'exact')
+          const unscored    = isUnscored(tag)
           const editingThis = editKey === tag.tag
 
           return (
@@ -247,11 +335,13 @@ function TagWeights({ tags, setTagWeight, clearTagWeight }) {
               display: 'grid', gridTemplateColumns: '1fr 90px 220px 150px',
               gap: 16, alignItems: 'center', padding: '12px 16px',
               borderBottom: '1px solid var(--jh-line)',
+              background: unscored ? 'rgba(240,168,28,0.07)' : undefined,
             }}>
               <div style={{
                 fontFamily: 'var(--font-mono, monospace)', fontSize: 12,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }} title={tag.tag}>
+                {unscored && <span title="No rule matches this tag">⚠️ </span>}
                 {tag.tag}
               </div>
 
@@ -260,8 +350,10 @@ function TagWeights({ tags, setTagWeight, clearTagWeight }) {
               </div>
 
               <div style={{ fontSize: 11, color: 'var(--fg-3)', lineHeight: 1.4 }}>
-                {rules.length === 0 ? (
-                  <span style={{ color: 'var(--fg-4)' }}>no rule — worth 0</span>
+                {tag.tag === UNTAGGED ? (
+                  <span style={{ color: 'var(--fg-4)' }}>no tag — stage score only</span>
+                ) : unscored ? (
+                  <span style={{ color: '#b45309', fontWeight: 700 }}>no rule — worth 0</span>
                 ) : isExact ? (
                   <span style={{ color: '#7a1ec2', fontWeight: 700 }}>📌 pinned override</span>
                 ) : (
@@ -290,9 +382,10 @@ function TagWeights({ tags, setTagWeight, clearTagWeight }) {
                       {fmtWeight(tag.weight)}
                     </span>
                     <button
-                      className="chart-toggle-btn"
+                      className={`chart-toggle-btn${unscored ? ' active' : ''}`}
                       onClick={() => { setEditKey(tag.tag); setDraft(String(tag.weight)) }}
-                      title="Pin a weight for this exact tag"
+                      title={unscored ? 'Give this tag a weight' : 'Pin a weight for this exact tag'}
+                      disabled={tag.tag === UNTAGGED}
                     >✏️</button>
                     {isExact && (
                       <button
@@ -402,10 +495,13 @@ function PatternRules({ rules, saveRule, deleteRule }) {
               {busy ? 'Saving…' : '💾 Save rule'}
             </button>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 10 }}>
+          <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 10, lineHeight: 1.5 }}>
             Patterns match the <strong>normalised</strong> tag — uppercased with arrows tightened, so
             <code style={{ margin: '0 4px' }}>EVENT -&gt; RSVP -&gt; WEBINAR</code> becomes
             <code style={{ margin: '0 4px' }}>EVENT-&gt;RSVP-&gt;WEBINAR</code>.
+            <br />
+            <code>%-&gt;ACTION-&gt;%</code> needs a segment after the action. If your tag ends at the
+            action, use <code>%-&gt;ACTION%</code> instead.
           </div>
         </div>
       )}
@@ -464,6 +560,12 @@ export default function IntentScoringPage() {
     saveStageWeights, setTagWeight, clearTagWeight, saveRule, deleteRule,
   } = useIntentScoring()
   const { data: distribution } = useIntentDistribution({})
+  const [onlyUnscored, setOnlyUnscored] = useState(false)
+
+  function reviewUnscored() {
+    setOnlyUnscored(true)
+    document.getElementById('tag-weights')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   return (
     <div>
@@ -493,9 +595,16 @@ export default function IntentScoringPage() {
         <div className="spinner-wrap"><div className="spinner" /></div>
       ) : (
         <>
+          <UnscoredBanner tags={tags} onReview={reviewUnscored} />
           <BandLegend distribution={distribution} />
           <StageWeights stages={stages} saveStageWeights={saveStageWeights} />
-          <TagWeights tags={tags} setTagWeight={setTagWeight} clearTagWeight={clearTagWeight} />
+          <TagWeights
+            tags={tags}
+            setTagWeight={setTagWeight}
+            clearTagWeight={clearTagWeight}
+            onlyUnscored={onlyUnscored}
+            setOnlyUnscored={setOnlyUnscored}
+          />
           <PatternRules rules={rules} saveRule={saveRule} deleteRule={deleteRule} />
         </>
       )}
