@@ -1,17 +1,19 @@
 import { useState } from 'react'
 import { STAGE_MAP } from '../constants/stages'
+import { intentBand, intentBarPct } from '../constants/intent'
 import ExportButton from './ExportButton'
 
 const COLUMNS = [
-  { key: 'full_name',  label: 'Name',      sortable: true  },
-  { key: 'email',      label: 'Email',     sortable: true  },
-  { key: 'stage',      label: 'Stage',     sortable: true  },
-  { key: 'tag',        label: 'Tag',       sortable: false },
-  { key: 'source',     label: 'Source',    sortable: true  },
-  { key: 'location',   label: 'Location',  sortable: true  },
-  { key: 'score',      label: 'Score',     sortable: true  },
-  { key: 'archetype',  label: 'Archetype', sortable: false },
-  { key: 'created_at', label: 'Added',     sortable: true  },
+  { key: 'full_name',    label: 'Name',       sortable: true  },
+  { key: 'email',        label: 'Email',      sortable: true  },
+  { key: 'stage',        label: 'Stage',      sortable: true  },
+  { key: 'tag',          label: 'Tag',        sortable: false },
+  { key: 'source',       label: 'Source',     sortable: true  },
+  { key: 'location',     label: 'Location',   sortable: true  },
+  { key: 'intent_score', label: 'Intent',     sortable: true  },
+  { key: 'score',        label: 'Quiz score', sortable: true  },
+  { key: 'archetype',    label: 'Archetype',  sortable: false },
+  { key: 'created_at',   label: 'Added',      sortable: true  },
 ]
 
 function formatDate(iso) {
@@ -26,6 +28,36 @@ export function fullName(lead) {
     .join(' ')
 }
 
+/** Buying-intent cell: coloured bar + signed score + band label */
+function IntentCell({ score }) {
+  const value = Number(score ?? 0)
+  const band  = intentBand(value)
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 130 }}>
+      <div style={{
+        flex: 1, height: 6, borderRadius: 999,
+        background: 'var(--bg-soft)', overflow: 'hidden', minWidth: 50,
+      }}>
+        <div style={{
+          width: `${intentBarPct(value)}%`, height: '100%',
+          background: band.color, borderRadius: 999,
+        }} />
+      </div>
+      <span
+        title={`${band.label} — ${band.description}`}
+        style={{
+          fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 13,
+          color: band.color, minWidth: 32, textAlign: 'right',
+        }}
+      >
+        {value > 0 ? `+${value}` : value}
+      </span>
+      <span style={{ fontSize: 13 }} title={band.label}>{band.emoji}</span>
+    </div>
+  )
+}
+
 export default function LeadsTable({ rows, total, page, totalPages, setPage, loading, exportParams, exportName = 'leads' }) {
   const [sortKey, setSortKey] = useState('created_at')
   const [sortDir, setSortDir] = useState('desc')
@@ -38,6 +70,11 @@ export default function LeadsTable({ rows, total, page, totalPages, setPage, loa
   const withNames = (rows ?? []).map(r => ({ ...r, full_name: fullName(r) }))
 
   const sorted = [...withNames].sort((a, b) => {
+    // numeric columns must compare as numbers, not strings, or -50 sorts above 9
+    if (sortKey === 'intent_score' || sortKey === 'score') {
+      const cmp = Number(a[sortKey] ?? 0) - Number(b[sortKey] ?? 0)
+      return sortDir === 'asc' ? cmp : -cmp
+    }
     const aVal = a[sortKey] ?? ''
     const bVal = b[sortKey] ?? ''
     const cmp  = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
@@ -113,6 +150,9 @@ export default function LeadsTable({ rows, total, page, totalPages, setPage, loa
                       </td>
                       <td style={{ color: 'var(--fg-3)' }}>{lead.source ?? '—'}</td>
                       <td style={{ color: 'var(--fg-3)', fontSize: 12 }}>{lead.location ?? '—'}</td>
+                      <td>
+                        <IntentCell score={lead.intent_score} />
+                      </td>
                       <td>
                         <div className="score-bar-wrap">
                           <div className="score-bar">
