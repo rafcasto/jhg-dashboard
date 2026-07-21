@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { STAGES, STAGE_MAP } from '../constants/stages'
 import { intentBand, intentBarPct } from '../constants/intent'
 import { usePeopleList, usePersonTimeline } from '../hooks/usePeopleData'
@@ -207,11 +207,29 @@ export default function PeoplePage() {
   const [minIntent, setMinIntent] = useState('')
   const [sort, setSort]           = useState('intent')
   const [picked, setPicked]       = useState(null)   // { fit, intent } from the quadrant
+  const [period, setPeriod]       = useState('all')  // all | 30 | 60 | 90 | custom
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd]     = useState('')
   const [expanded, setExpanded]   = useState(null)
+
+  // Resolve the period into an activity window (ISO strings, or null).
+  const { startDate, endDate } = useMemo(() => {
+    const daysAgo = d => new Date(Date.now() - d * 86400000).toISOString()
+    switch (period) {
+      case '30': return { startDate: daysAgo(30), endDate: null }
+      case '60': return { startDate: daysAgo(60), endDate: null }
+      case '90': return { startDate: daysAgo(90), endDate: null }
+      case 'custom': return {
+        startDate: customStart ? new Date(`${customStart}T00:00:00`).toISOString() : null,
+        endDate:   customEnd   ? new Date(`${customEnd}T23:59:59.999`).toISOString() : null,
+      }
+      default: return { startDate: null, endDate: null }
+    }
+  }, [period, customStart, customEnd])
 
   const { rows, total, totalPeople, page, setPage, totalPages, loading, error } =
     usePeopleList({
-      search, stage, minIntent, sort,
+      search, stage, minIntent, sort, startDate, endDate,
       fitBand:    picked?.fit ?? null,
       intentBand: picked?.intent ?? null,
     })
@@ -233,7 +251,7 @@ export default function PeoplePage() {
         </p>
       </div>
 
-      <LeadQuadrant picked={picked} onPick={setPicked} />
+      <LeadQuadrant picked={picked} onPick={setPicked} startDate={startDate} endDate={endDate} />
 
       <div className="filter-bar">
         <div className="filter-group">
@@ -266,6 +284,30 @@ export default function PeoplePage() {
             {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
         </div>
+        <div className="filter-group">
+          <label className="filter-label">Period</label>
+          <select className="filter-select" value={period} onChange={e => setPeriod(e.target.value)}>
+            <option value="all">All time</option>
+            <option value="30">Last 30 days</option>
+            <option value="60">Last 60 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="custom">Custom…</option>
+          </select>
+        </div>
+        {period === 'custom' && (
+          <>
+            <div className="filter-group">
+              <label className="filter-label">From</label>
+              <input type="date" className="filter-input" value={customStart}
+                onChange={e => setCustomStart(e.target.value)} />
+            </div>
+            <div className="filter-group">
+              <label className="filter-label">To</label>
+              <input type="date" className="filter-input" value={customEnd}
+                onChange={e => setCustomEnd(e.target.value)} />
+            </div>
+          </>
+        )}
       </div>
 
       {error && (

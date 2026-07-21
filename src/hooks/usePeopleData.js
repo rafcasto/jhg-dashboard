@@ -83,7 +83,7 @@ export function usePersonTimeline() {
  * unknown-fit bucket (people who never took the quiz).
  * From public.people_quadrant() (migration 017).
  */
-export function usePeopleQuadrant() {
+export function usePeopleQuadrant({ startDate, endDate } = {}) {
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
@@ -92,7 +92,10 @@ export function usePeopleQuadrant() {
     let cancelled = false
     async function run() {
       setLoading(true)
-      const { data: d, error: err } = await supabase.rpc('people_quadrant')
+      const { data: d, error: err } = await supabase.rpc('people_quadrant', {
+        p_start: startDate || null,
+        p_end:   endDate   || null,
+      })
       if (cancelled) return
       if (err) { setError(err.message); setLoading(false); return }
       setData(d)
@@ -100,7 +103,7 @@ export function usePeopleQuadrant() {
     }
     run()
     return () => { cancelled = true }
-  }, [])
+  }, [startDate, endDate])
 
   return { data, loading, error }
 }

@@ -35,8 +35,8 @@ function Cell({ seg, count, pct, active, onPick }) {
   )
 }
 
-export default function LeadQuadrant({ picked, onPick }) {
-  const { data, loading, error } = usePeopleQuadrant()
+export default function LeadQuadrant({ picked, onPick, startDate, endDate }) {
+  const { data, loading, error } = usePeopleQuadrant({ startDate, endDate })
 
   if (error) return null
   if (loading || !data) {
@@ -80,13 +80,17 @@ export default function LeadQuadrant({ picked, onPick }) {
       </div>
 
       <div style={{ display: 'flex', gap: 20, alignItems: 'stretch', flexWrap: 'wrap' }}>
-        {/* Y axis label */}
+        {/* Y axis legend — high at top, low at bottom, mirroring the fit legend */}
         <div style={{
-          display: 'flex', alignItems: 'center', writingMode: 'vertical-rl',
-          transform: 'rotate(180deg)', fontSize: 11, fontWeight: 700,
-          letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--fg-3)',
+          display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+          alignItems: 'center', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px',
+          textTransform: 'uppercase', color: 'var(--fg-3)', paddingBottom: 28,
         }}>
-          ← Buying intent →
+          <span style={{ color: '#16a34a' }}>High intent ↑</span>
+          <span style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+            Buying intent (top = readier to buy)
+          </span>
+          <span style={{ color: '#f08a1c' }}>↓ Low intent</span>
         </div>
 
         <div style={{ flex: 1, minWidth: 460 }}>
@@ -116,7 +120,9 @@ export default function LeadQuadrant({ picked, onPick }) {
             fontSize: 11, fontWeight: 700, letterSpacing: '0.5px',
             textTransform: 'uppercase', color: 'var(--fg-3)',
           }}>
-            ← Low fit · High fit → &nbsp;·&nbsp; Fit (right = better ICP match)
+            <span style={{ color: '#f08a1c' }}>← Low fit</span>
+            &nbsp;·&nbsp;<span style={{ color: '#16a34a' }}>High fit →</span>
+            &nbsp;·&nbsp; Fit (right = better ICP match)
           </div>
         </div>
 
