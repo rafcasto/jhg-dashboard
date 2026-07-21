@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { STAGES, STAGE_MAP } from '../constants/stages'
 import { intentBand, intentBarPct } from '../constants/intent'
 import { usePeopleList, usePersonTimeline } from '../hooks/usePeopleData'
+import LeadQuadrant from '../components/LeadQuadrant'
 
 const CHURN_META = { key: 'churn', label: 'Churn', emoji: '🪦', color: '#dc2626' }
 const stageMeta = key => STAGE_MAP[key] ?? (key === 'churn' ? CHURN_META : { label: key, emoji: '•', color: 'var(--fg-3)' })
@@ -13,6 +14,7 @@ const SORTS = [
   { key: 'last_seen',    label: '🕐 Last seen' },
   { key: 'first_seen',   label: '📅 First seen' },
   { key: 'decayed',      label: '🥶 Most decayed' },
+  { key: 'fit',          label: '🧭 Fit' },
 ]
 
 function fmtDate(iso) {
@@ -32,6 +34,24 @@ function StageBadge({ stage }) {
   return (
     <span className="stage-badge" style={{ background: m.color }}>
       {m.emoji} {stage}
+    </span>
+  )
+}
+
+function FitBadge({ score, band, grade }) {
+  if (score == null) {
+    return <span style={{ fontSize: 11, color: 'var(--fg-4)' }} title="No quiz — fit unknown">— no quiz</span>
+  }
+  const color = band === 'high' ? '#16a34a' : '#f08a1c'
+  return (
+    <span
+      title={`Fit ${score}/100${grade ? ` · grade ${grade}` : ''} — ${band === 'high' ? 'high (right ICP)' : 'low (weaker ICP)'}`}
+      style={{
+        display: 'inline-block', padding: '2px 8px', borderRadius: 999,
+        background: `${color}1a`, color, fontWeight: 700, fontSize: 12,
+      }}
+    >
+      {band === 'high' ? '✓' : '~'} {score}{grade ? ` · ${grade}` : ''}
     </span>
   )
 }
@@ -186,10 +206,15 @@ export default function PeoplePage() {
   const [stage, setStage]         = useState('')
   const [minIntent, setMinIntent] = useState('')
   const [sort, setSort]           = useState('intent')
+  const [picked, setPicked]       = useState(null)   // { fit, intent } from the quadrant
   const [expanded, setExpanded]   = useState(null)
 
   const { rows, total, totalPeople, page, setPage, totalPages, loading, error } =
-    usePeopleList({ search, stage, minIntent, sort })
+    usePeopleList({
+      search, stage, minIntent, sort,
+      fitBand:    picked?.fit ?? null,
+      intentBand: picked?.intent ?? null,
+    })
   const { cache, loading: tlLoading, load } = usePersonTimeline()
 
   function toggle(email) {
@@ -207,6 +232,8 @@ export default function PeoplePage() {
           furthest stage plus distinct behaviours. Click anyone to see every interaction.
         </p>
       </div>
+
+      <LeadQuadrant picked={picked} onPick={setPicked} />
 
       <div className="filter-bar">
         <div className="filter-group">
@@ -248,7 +275,7 @@ export default function PeoplePage() {
               Couldn’t load people: {error}
               <br />
               <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
-                Migrations 013 and 014 may not be applied yet.
+                Migrations 013–017 may not be applied yet.
               </span>
             </p>
           </div>
@@ -281,6 +308,7 @@ export default function PeoplePage() {
                     <th style={{ textAlign: 'right' }}>Behaviours</th>
                     <th>First seen</th>
                     <th>Last seen</th>
+                    <th>Fit</th>
                     <th style={{ textAlign: 'right', minWidth: 150 }}>Intent</th>
                   </tr>
                 </thead>
@@ -327,11 +355,12 @@ export default function PeoplePage() {
                             </div>
                           )}
                         </td>
+                        <td><FitBadge score={p.fit_score} band={p.fit_band} grade={p.quiz_grade} /></td>
                         <td><IntentPill score={p.intent_score} /></td>
                       </tr>,
                       open && (
                         <tr key={`${p.email}-tl`}>
-                          <td colSpan={8} style={{ padding: 0 }}>
+                          <td colSpan={9} style={{ padding: 0 }}>
                             <Timeline
                               email={p.email}
                               data={cache[p.email]}

@@ -10,7 +10,7 @@ const PAGE_SIZE = 50
  * is the person grain: furthest stage reached, distinct tag behaviours,
  * and a single intent score per human.
  */
-export function usePeopleList({ search, stage, source, startDate, endDate, minIntent, sort } = {}) {
+export function usePeopleList({ search, stage, source, startDate, endDate, minIntent, sort, fitBand, intentBand } = {}) {
   const [rows, setRows]           = useState([])
   const [total, setTotal]         = useState(0)
   const [totalPeople, setTotalPeople] = useState(0)
@@ -20,7 +20,7 @@ export function usePeopleList({ search, stage, source, startDate, endDate, minIn
 
   useEffect(() => {
     setPage(0)
-  }, [search, stage, source, startDate, endDate, minIntent, sort])
+  }, [search, stage, source, startDate, endDate, minIntent, sort, fitBand, intentBand])
 
   useEffect(() => {
     let cancelled = false
@@ -35,6 +35,8 @@ export function usePeopleList({ search, stage, source, startDate, endDate, minIn
         p_end:        endDate   || null,
         p_min_intent: (minIntent === '' || minIntent == null) ? null : Number(minIntent),
         p_sort:       sort      || 'intent',
+        p_fit_band:    fitBand    || null,
+        p_intent_band: intentBand || null,
         p_limit:      PAGE_SIZE,
         p_offset:     page * PAGE_SIZE,
       })
@@ -47,7 +49,7 @@ export function usePeopleList({ search, stage, source, startDate, endDate, minIn
     }
     run()
     return () => { cancelled = true }
-  }, [search, stage, source, startDate, endDate, minIntent, sort, page])
+  }, [search, stage, source, startDate, endDate, minIntent, sort, fitBand, intentBand, page])
 
   return {
     rows, total, totalPeople, page, setPage,
@@ -74,4 +76,31 @@ export function usePersonTimeline() {
   }, [cache, loading])
 
   return { cache, loading, load }
+}
+
+/**
+ * Intent × fit quadrant summary — counts per segment plus the
+ * unknown-fit bucket (people who never took the quiz).
+ * From public.people_quadrant() (migration 017).
+ */
+export function usePeopleQuadrant() {
+  const [data, setData]       = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    async function run() {
+      setLoading(true)
+      const { data: d, error: err } = await supabase.rpc('people_quadrant')
+      if (cancelled) return
+      if (err) { setError(err.message); setLoading(false); return }
+      setData(d)
+      setLoading(false)
+    }
+    run()
+    return () => { cancelled = true }
+  }, [])
+
+  return { data, loading, error }
 }
