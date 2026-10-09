@@ -53,3 +53,25 @@ export function slug(text) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'leads'
 }
+
+/** Parse CSV text into rows of cells (handles quotes, CRLF, BOM). Blank rows dropped. */
+export function parseCSV(text) {
+  const rows = []
+  let row = [], cell = '', inQ = false
+  const s = String(text ?? '').replace(/^﻿/, '')
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (inQ) {
+      if (c === '"') {
+        if (s[i + 1] === '"') { cell += '"'; i++ } else inQ = false
+      } else cell += c
+    } else if (c === '"') inQ = true
+    else if (c === ',') { row.push(cell); cell = '' }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && s[i + 1] === '\n') i++
+      row.push(cell); rows.push(row); row = []; cell = ''
+    } else cell += c
+  }
+  if (cell.length || row.length) { row.push(cell); rows.push(row) }
+  return rows.filter(r => r.some(x => x.trim() !== ''))
+}

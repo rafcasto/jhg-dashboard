@@ -5,10 +5,11 @@ import AppLayout from './layouts/AppLayout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import CustomDashboardsPage from './pages/CustomDashboardsPage'
-import TargetsPage from './pages/TargetsPage'
+import ExperimentsPage from './pages/ExperimentsPage'
 import IntentScoringPage from './pages/IntentScoringPage'
 import PeoplePage from './pages/PeoplePage'
 import UsersPage from './pages/UsersPage'
+import SettingsPage from './pages/SettingsPage'
 
 function App() {
   return (
@@ -26,10 +27,12 @@ function App() {
           >
             <Route path="/" element={<DashboardPage />} />
             <Route path="/custom" element={<CustomDashboardsPage />} />
-            <Route path="/targets" element={<TargetsPage />} />
+            <Route path="/experiments" element={<ExperimentsPage />} />
+            <Route path="/targets" element={<Navigate to="/experiments" replace />} />
             <Route path="/people" element={<PeoplePage />} />
             <Route path="/intent" element={<IntentScoringPage />} />
             <Route path="/users" element={<UsersPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
