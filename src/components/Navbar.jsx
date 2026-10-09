@@ -1,8 +1,13 @@
 import { useLocation } from 'react-router-dom'
 
 const TITLES = {
-  '/':       'AARRR Pirate Metrics',
-  '/users':  'User Access Management',
+  '/':            'AARRR Pirate Metrics',
+  '/custom':      'Custom Dashboards',
+  '/experiments': 'Experiments',
+  '/people':      'People',
+  '/intent':      'Buying Intent',
+  '/users':       'User Access Management',
+  '/settings':    'Settings',
 }
 
 export default function Navbar() {
