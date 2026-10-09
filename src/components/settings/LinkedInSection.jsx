@@ -5,18 +5,44 @@ function fmtTime(iso) {
   return iso ? new Date(iso).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'never'
 }
 
+const isCsvOnly = acc => acc.config?.source === 'csv'
+
 export default function LinkedInSection({ accounts, env, actions, notify }) {
-  const [busy, setBusy]       = useState({})
+  const [busy, setBusy]           = useState({})
   const [importing, setImporting] = useState(null)
   const configured = env?.linkedin?.client_id && env?.linkedin?.client_secret
 
   const setB = (id, v) => setBusy(b => ({ ...b, [id]: v }))
 
+  async function addManual() {
+    const label = window.prompt('Name for this LinkedIn account (e.g. "Rafael" or "JHG company page")') ?? ''
+    if (!label.trim()) return
+    try {
+      const acc = await actions.createLinkedinManual(label.trim())
+      setImporting(acc.id)
+      notify('ok', `Added "${acc.label}". Upload LinkedIn's analytics export to fill it with data.`)
+    } catch (e) {
+      notify('error', e.message)
+    }
+  }
+
   async function connect() {
-    const label = window.prompt('Label for this LinkedIn account (e.g. "Rafael" or "JHG company page")') ?? ''
+    const label = window.prompt('Label for this LinkedIn account (e.g. "JHG company page")') ?? ''
     try {
       const url = await actions.linkedinAuthUrl(label.trim() || undefined)
       window.location.href = url
+    } catch (e) {
+      notify('error', e.message)
+    }
+  }
+
+  async function invite() {
+    const label = window.prompt('Whose LinkedIn is this? (e.g. "Sarah")') ?? ''
+    if (!label.trim()) return
+    try {
+      const url = await actions.linkedinInviteUrl(label.trim())
+      await navigator.clipboard.writeText(url)
+      notify('ok', `Invite link for ${label.trim()} copied — send it to them. They log in to LinkedIn, approve, and their account appears here. Link lasts 7 days.`)
     } catch (e) {
       notify('error', e.message)
     }
@@ -40,7 +66,7 @@ export default function LinkedInSection({ accounts, env, actions, notify }) {
   }
 
   async function remove(acc) {
-    if (!window.confirm(`Disconnect "${acc.label}"? Its imported impressions will be deleted.`)) return
+    if (!window.confirm(`Remove "${acc.label}"? Its imported impressions will be deleted.`)) return
     try { await actions.remove(acc.id) } catch (e) { notify('error', e.message) }
   }
 
@@ -50,26 +76,29 @@ export default function LinkedInSection({ accounts, env, actions, notify }) {
         <h2 className="page-section-title" style={{ flex: 1, marginBottom: 0, paddingBottom: 0, border: 'none' }}>
           👀 LinkedIn accounts <span style={{ fontWeight: 400, color: 'var(--fg-3)', fontSize: 13 }}>— Awareness: impressions &amp; engagement</span>
         </h2>
-        <button className="btn-secondary" onClick={connect} disabled={!configured}>+ Connect LinkedIn</button>
+        <button className="btn-secondary" onClick={addManual}>+ Add account (CSV)</button>
+        {configured && (
+          <>
+            <button className="chart-toggle-btn" onClick={connect} title="Connect your own LinkedIn (requires Community Management API approval)">
+              Connect via API
+            </button>
+            <button className="chart-toggle-btn" onClick={invite} title="Copy a link someone else can open to connect their LinkedIn">
+              🔗 Invite someone
+            </button>
+          </>
+        )}
       </div>
       <div style={{ borderBottom: '1px solid var(--jh-line)', margin: '16px 0' }} />
 
-      {env && !configured && (
-        <div className="form-error">
-          LinkedIn OAuth isn't configured. In Vercel → Settings → Environment Variables add{' '}
-          <code>LINKEDIN_CLIENT_ID</code> and <code>LINKEDIN_CLIENT_SECRET</code> from your LinkedIn
-          developer app, register <code>{env.linkedin.redirect_uri}</code> as an authorised redirect URL,
-          and request the <em>Community Management API</em> product. Then redeploy.
-        </div>
-      )}
-
       {accounts.length === 0 ? (
         <div className="empty-state" style={{ padding: 24 }}>
-          <p>No LinkedIn accounts connected. Connect as many as you post from — each one shows up
-             as a channel you can attach to an experiment.</p>
+          <p>No LinkedIn accounts yet. Add one per profile or page you post from — each shows up
+             as a channel you can attach to an experiment. Then upload LinkedIn's analytics export
+             to bring in impressions and engagement.</p>
         </div>
       ) : accounts.map(acc => {
-        const orgs = acc.config?.orgs ?? []
+        const orgs   = acc.config?.orgs ?? []
+        const manual = isCsvOnly(acc)
         return (
           <div key={acc.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--jh-line)' }}>
             <div className="integration-row">
@@ -82,29 +111,36 @@ export default function LinkedInSection({ accounts, env, actions, notify }) {
                   )}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>
-                  Last synced {fmtTime(acc.last_synced_at)}
+                  {manual ? 'Last import' : 'Last synced'} {fmtTime(acc.last_synced_at)}
                   {acc.status === 'error' && acc.last_error && (
                     <span style={{ color: '#b91c1c' }}> · ⚠️ {acc.last_error}</span>
                   )}
                 </div>
               </div>
 
-              <select className="filter-select" value={acc.config?.author_urn ?? ''}
-                      disabled={busy[acc.id] === 'page'}
-                      onChange={e => choosePage(acc, e.target.value)}
-                      title="Which LinkedIn page's analytics this account reports on">
-                <option value="">Choose page…</option>
-                {orgs.map(o => <option key={o.urn} value={o.urn}>🏢 {o.name}</option>)}
-                {acc.config?.member_urn && (
-                  <option value={acc.config.member_urn}>👤 Personal profile (CSV import)</option>
-                )}
-              </select>
+              {!manual && (
+                <select className="filter-select" value={acc.config?.author_urn ?? ''}
+                        disabled={busy[acc.id] === 'page'}
+                        onChange={e => choosePage(acc, e.target.value)}
+                        title="Which LinkedIn page's analytics this account reports on">
+                  <option value="">Choose page…</option>
+                  {orgs.map(o => <option key={o.urn} value={o.urn}>🏢 {o.name}</option>)}
+                  {acc.config?.member_urn && (
+                    <option value={acc.config.member_urn}>👤 Personal profile</option>
+                  )}
+                </select>
+              )}
 
-              <span className={`role-badge ${acc.status === 'connected' ? 'viewer' : 'admin'}`}>{acc.status}</span>
-              <button className="chart-toggle-btn" disabled={busy[acc.id] === 'sync'} onClick={() => sync(acc)}>
-                {busy[acc.id] === 'sync' ? 'Syncing…' : '⟳ Sync'}
-              </button>
-              <button className="chart-toggle-btn" onClick={() => setImporting(importing === acc.id ? null : acc.id)}>
+              <span className={`role-badge ${acc.status === 'connected' ? 'viewer' : 'admin'}`}>
+                {manual ? 'csv' : acc.status}
+              </span>
+              {!manual && (
+                <button className="chart-toggle-btn" disabled={busy[acc.id] === 'sync'} onClick={() => sync(acc)}>
+                  {busy[acc.id] === 'sync' ? 'Syncing…' : '⟳ Sync'}
+                </button>
+              )}
+              <button className={`chart-toggle-btn${manual ? ' active' : ''}`}
+                      onClick={() => setImporting(importing === acc.id ? null : acc.id)}>
                 📥 Import CSV
               </button>
               <button className="btn-danger" onClick={() => remove(acc)}>Remove</button>
@@ -117,9 +153,12 @@ export default function LinkedInSection({ accounts, env, actions, notify }) {
       })}
 
       <p style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 12 }}>
-        LinkedIn's API only returns impressions for <strong>company pages</strong> you administer.
-        For a <strong>personal profile</strong>, choose “Personal profile” and use <em>Import CSV</em> with
-        LinkedIn's own analytics export — the numbers land in the same place.
+        <strong>CSV</strong> accounts take LinkedIn's own analytics export (Analytics → <em>Export</em>) —
+        works today for personal profiles and company pages. <strong>API</strong> accounts sync nightly
+        (daily impressions, reactions, comments, reposts for your own posts; full stats for company pages)
+        once LinkedIn approves the <em>Community Management API</em> product on the developer
+        app{configured ? '' : ' (not configured)'}. Importing a CSV into an API account also lets the
+        sync refresh per-post numbers for those posts.
       </p>
     </div>
   )

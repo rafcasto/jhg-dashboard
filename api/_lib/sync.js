@@ -5,9 +5,15 @@ import * as li from './linkedin.js'
 
 const DAY = 86400000
 
+// LinkedIn accounts created without OAuth get their numbers from CSV import only.
+export const isCsvOnly = integ => integ.kind === 'linkedin' && integ.config?.source === 'csv'
+
 export async function syncIntegration(id, { days = 90 } = {}) {
   const { data: integ } = await supabaseAdmin.from('integrations').select('*').eq('id', id).single()
   if (!integ) throw new HttpError(404, 'Integration not found')
+  if (isCsvOnly(integ)) {
+    throw new HttpError(400, 'This LinkedIn account is CSV-only — use "Import CSV" with LinkedIn\'s analytics export')
+  }
 
   const { data: sec } = await supabaseAdmin
     .from('integration_secrets').select('secrets').eq('integration_id', id).single()
@@ -36,9 +42,9 @@ export async function syncIntegration(id, { days = 90 } = {}) {
 }
 
 export async function syncAll({ days = 14 } = {}) {
-  const { data: list } = await supabaseAdmin.from('integrations').select('id, label')
+  const { data: list } = await supabaseAdmin.from('integrations').select('id, label, kind, config')
   const results = []
-  for (const i of list ?? []) {
+  for (const i of (list ?? []).filter(i => !isCsvOnly(i))) {
     try   { results.push({ ok: true,  ...(await syncIntegration(i.id, { days })) }) }
     catch (e) { results.push({ ok: false, id: i.id, label: i.label, error: e.message }) }
   }
@@ -74,9 +80,9 @@ async function syncLinkedin(integ, secrets, start, end) {
   if (!author) {
     throw new Error('Choose which LinkedIn Page this account reports on (Settings → LinkedIn → Page)')
   }
+  if (author.startsWith('urn:li:person:')) return syncMemberProfile(integ, token, start, end)
   if (!author.startsWith('urn:li:organization:')) {
-    throw new Error('LinkedIn only exposes analytics for organization pages via API. ' +
-                    'For a personal profile, use "Import CSV" with LinkedIn\'s analytics export.')
+    throw new Error(`Unsupported LinkedIn author "${author}"`)
   }
 
   // Per-post lifetime stats
@@ -118,4 +124,49 @@ async function syncLinkedin(integ, secrets, start, end) {
   }
 
   return { posts: postRows.length, days: daily.length }
+}
+
+// Personal profile — memberCreatorPostAnalytics (r_member_postAnalytics).
+// Daily totals come straight from the API. Per-post numbers are refreshed for
+// any post we already know the URL of (from CSV import); LinkedIn doesn't let
+// us list a member's posts directly.
+async function syncMemberProfile(integ, token, start, end) {
+  const now = new Date().toISOString()
+
+  const daily = await li.memberDailyStats(token, start, end)
+  if (daily.length) {
+    const { error } = await supabaseAdmin.from('awareness_daily').upsert(
+      daily.map(d => ({
+        ...d, integration_id: integ.id,
+        engagements: d.likes + d.comments + d.shares + d.clicks,
+        source: 'api', fetched_at: now,
+      })),
+      { onConflict: 'integration_id,date' })
+    if (error) throw new Error(error.message)
+  }
+
+  const { data: known } = await supabaseAdmin.from('awareness_posts')
+    .select('post_id, post_url')
+    .eq('integration_id', integ.id)
+    .not('post_url', 'is', null)
+    .gte('published_at', start.toISOString())
+    .order('published_at', { ascending: false })
+    .limit(40)
+
+  let updated = 0
+  for (const row of known ?? []) {
+    const candidates = li.postUrnCandidates(row.post_url)
+    if (!candidates.length) continue
+    const stats = await li.memberPostStats(token, candidates)
+    const hit   = candidates.find(u => stats.has(u))
+    if (!hit) continue
+    const s = stats.get(hit)
+    const { error } = await supabaseAdmin.from('awareness_posts').update({
+      ...s, engagements: s.likes + s.comments + s.shares + s.clicks,
+      source: 'api', fetched_at: now,
+    }).eq('integration_id', integ.id).eq('post_id', row.post_id)
+    if (!error) updated++
+  }
+
+  return { posts: updated, days: daily.length }
 }

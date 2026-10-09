@@ -1,5 +1,6 @@
 // GET  /api/integrations        — list (any dashboard user; secrets never returned)
-// POST /api/integrations        — create a GA4 site integration (admin)
+// POST /api/integrations        — create a GA4 site integration, or a manual
+//                                  (CSV-only) LinkedIn account (admin)
 import { supabaseAdmin, requireUser, requireAdmin, sendError, HttpError } from '../_lib/admin.js'
 
 export default async function handler(req, res) {
@@ -15,8 +16,20 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       const { user } = await requireAdmin(req)
       const { kind = 'ga4', label, site_key, config = {}, secrets = {} } = req.body ?? {}
-      if (kind !== 'ga4') throw new HttpError(400, 'LinkedIn accounts are connected via OAuth — use "Connect LinkedIn"')
       if (!label?.trim())  throw new HttpError(400, 'label is required')
+
+      // Manual LinkedIn account: no OAuth, metrics arrive via CSV import only.
+      if (kind === 'linkedin') {
+        const { data: integ, error } = await supabaseAdmin.from('integrations').insert({
+          kind, label: label.trim(),
+          config: { source: 'csv', member_name: label.trim(), author_name: label.trim(), orgs: [] },
+          status: 'connected',
+          created_by: user.id,
+        }).select().single()
+        if (error) throw new Error(error.message)
+        return res.status(201).json(integ)
+      }
+      if (kind !== 'ga4') throw new HttpError(400, `Unknown integration kind "${kind}"`)
       if (!site_key?.trim()) throw new HttpError(400, 'site_key is required')
       if (!config.property_id) throw new HttpError(400, 'GA4 property id is required')
 

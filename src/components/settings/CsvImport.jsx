@@ -48,8 +48,10 @@ export default function CsvImport({ integration, onImport, onClose }) {
         <button className="chart-toggle-btn" onClick={onClose}>Close</button>
       </div>
       <p style={{ fontSize: 12, color: 'var(--fg-3)', marginBottom: 10 }}>
-        LinkedIn → Analytics → Post analytics → <em>Export</em>. Open the .xlsx and save the
-        “Top posts” sheet (per-post) or the “Discovery” sheet (per-day impressions) as CSV, then upload it here.
+        <strong>Personal profile:</strong> Analytics &amp; tools → Post impressions → <em>Export</em>.{' '}
+        <strong>Company page:</strong> Page → Analytics → Content → <em>Export</em>.
+        Open the .xlsx and save the “Top posts” sheet (per-post) or the “Discovery” /
+        “Metrics” sheet (per-day impressions) as CSV, then upload it here.
       </p>
       <input type="file" accept=".csv,text/csv" onChange={handleFile} style={{ fontSize: 13 }} />
 
