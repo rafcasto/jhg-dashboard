@@ -21,7 +21,7 @@ export default async function handler(req, res) {
     ? res.status(200).setHeader('Content-Type', 'text/html; charset=utf-8').end(invitePage(ok, msg))
     : back(ok ? { linkedin: 'connected', id: msg } : { linkedin: 'error', msg })
 
-  if (error) return done(false, error_description || error)
+  if (error) return done(false, friendlyOAuthError(error, error_description))
 
   try {
     const secrets = await li.exchangeCode(code, redirectUri())
@@ -63,6 +63,22 @@ export default async function handler(req, res) {
     console.error('LinkedIn callback failed:', e)
     return done(false, e.message)
   }
+}
+
+// LinkedIn's scope errors all mean the same thing for us: the developer app
+// hasn't been granted the Community Management API product (or lost it).
+function friendlyOAuthError(error, description) {
+  const text = `${error} ${description ?? ''}`
+  if (/scope/i.test(text)) {
+    return 'LinkedIn hasn\'t granted this app the Community Management API yet — ' +
+           'check Products → request status and Auth → OAuth 2.0 scopes in the developer portal. ' +
+           'Use "+ Add account (CSV)" in the meantime. ' +
+           `(LinkedIn said: ${description || error})`
+  }
+  if (error === 'user_cancelled_login' || error === 'user_cancelled_authorize') {
+    return 'Connection cancelled on LinkedIn — nothing was changed.'
+  }
+  return description || error
 }
 
 function invitePage(ok, msg) {
