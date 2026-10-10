@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../supabase'
 
+// NOT `experiments` — that name is taken by the JobHackers site's A/B test
+// config table in the same Supabase project. See migration 020.
+const TABLE = 'dashboard_experiments'
+
 /**
  * CRUD for experiments — time-boxed posting windows measured against
  * downstream funnels.
@@ -21,7 +25,7 @@ export function useExperiments() {
     setLoading(true)
     setError(null)
     const { data, error: err } = await supabase
-      .from('experiments')
+      .from(TABLE)
       .select('*')
       .order('start_date', { ascending: false })
     if (err) setError(err.message)
@@ -46,7 +50,7 @@ export function useExperiments() {
 
   const createExperiment = useCallback(async (exp) => {
     const { data, error: err } = await supabase
-      .from('experiments').insert(toRow(exp)).select().single()
+      .from(TABLE).insert(toRow(exp)).select().single()
     if (err) throw new Error(err.message)
     await refresh()
     return data
@@ -54,7 +58,7 @@ export function useExperiments() {
 
   const updateExperiment = useCallback(async (id, exp) => {
     const { error: err } = await supabase
-      .from('experiments')
+      .from(TABLE)
       .update({ ...toRow(exp), updated_at: new Date().toISOString() })
       .eq('id', id)
     if (err) throw new Error(err.message)
@@ -62,7 +66,7 @@ export function useExperiments() {
   }, [refresh])
 
   const deleteExperiment = useCallback(async (id) => {
-    const { error: err } = await supabase.from('experiments').delete().eq('id', id)
+    const { error: err } = await supabase.from(TABLE).delete().eq('id', id)
     if (err) throw new Error(err.message)
     await refresh()
   }, [refresh])
