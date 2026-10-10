@@ -32,6 +32,12 @@ export function useIntegrations() {
     return data
   }, [refresh])
 
+  const createLinkedinManual = useCallback(async (label) => {
+    const data = await apiFetch('/api/integrations', { method: 'POST', body: { kind: 'linkedin', label } })
+    await refresh()
+    return data
+  }, [refresh])
+
   const update = useCallback(async (id, payload) => {
     const data = await apiFetch(`/api/integrations/${id}`, { method: 'PATCH', body: payload })
     await refresh()
@@ -63,6 +69,12 @@ export function useIntegrations() {
     return url
   }, [])
 
-  return { integrations, linkedin, ga4, loading, error, refresh,
-           createGa4, update, remove, sync, importCsv, linkedinAuthUrl }
+  const linkedinInviteUrl = useCallback(async (label) => {
+    const q = `?invite=1${label ? `&label=${encodeURIComponent(label)}` : ''}`
+    const { url } = await apiFetch(`/api/integrations/linkedin/start${q}`)
+    return url
+  }, [])
+
+  return { integrations, linkedin, ga4, loading, error, refresh, linkedinInviteUrl,
+           createGa4, createLinkedinManual, update, remove, sync, importCsv, linkedinAuthUrl }
 }
