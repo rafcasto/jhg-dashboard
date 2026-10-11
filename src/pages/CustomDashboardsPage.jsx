@@ -1,6 +1,11 @@
 import { useState, useMemo } from 'react'
-import { useCustomDashboards, computeStageCounts } from '../hooks/useCustomDashboards'
+import { useCustomDashboards } from '../hooks/useCustomDashboards'
 import { useTagBreakdown } from '../hooks/useTagBreakdown'
+import { useIntegrations } from '../hooks/useIntegrations'
+import { useExternalDaily } from '../hooks/useExternalDaily'
+import { mergeSites } from '../constants/sites'
+import { STAGE_SOURCES, LINKEDIN_METRICS, GA4_METRICS, DEFAULT_METRIC, stageSource } from '../constants/stageSources'
+import { resolveStageCounts, externalNeeds } from '../lib/stageCounts'
 import CustomFunnelChart from '../components/charts/CustomFunnelChart'
 import CustomBarChart   from '../components/charts/CustomBarChart'
 import CustomDonutChart from '../components/charts/CustomDonutChart'
@@ -16,11 +21,12 @@ const CHART_VIEWS = [
 ]
 
 const EMPTY_STAGE = () => ({
-  key:   crypto.randomUUID().slice(0, 8),
-  label: '',
-  emoji: '🔹',
-  color: PALETTE[0],
-  tags:  [],
+  key:    crypto.randomUUID().slice(0, 8),
+  label:  '',
+  emoji:  '🔹',
+  color:  PALETTE[0],
+  source: 'tags',
+  tags:   [],
 })
 
 // ---- Tag multi-select (checkbox list inside a collapsible) ----
@@ -90,8 +96,73 @@ function TagPicker({ allTags, selected, onChange }) {
   )
 }
 
+// ---- What a stage counts: tags, a LinkedIn metric, or a GA4 metric ----
+function SourceControls({ stage, allTags, sites, onChange }) {
+  const source = stageSource(stage)
+
+  function setSource(next) {
+    if (next === source) return
+    onChange(next === 'tags'
+      ? { source: 'tags', tags: stage.tags ?? [], metric: undefined, site: undefined }
+      : { source: next, metric: DEFAULT_METRIC[next], site: undefined })
+  }
+
+  return (
+    <>
+      <div className="filter-group">
+        <label className="filter-label">Counts</label>
+        <select className="filter-select" value={source} onChange={e => setSource(e.target.value)}>
+          {STAGE_SOURCES.map(s => (
+            <option key={s.key} value={s.key}>{s.emoji} {s.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {source === 'tags' && (
+        <div className="filter-group">
+          <label className="filter-label">Tags counted in this stage</label>
+          <TagPicker allTags={allTags} selected={stage.tags ?? []}
+                     onChange={tags => onChange({ tags })} />
+        </div>
+      )}
+
+      {source === 'linkedin' && (
+        <div className="filter-group">
+          <label className="filter-label">Metric</label>
+          <select className="filter-select" value={stage.metric ?? DEFAULT_METRIC.linkedin}
+                  onChange={e => onChange({ metric: e.target.value })}>
+            {LINKEDIN_METRICS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+          </select>
+        </div>
+      )}
+
+      {source === 'ga4' && (
+        <>
+          <div className="filter-group">
+            <label className="filter-label">Metric</label>
+            <select className="filter-select" value={stage.metric ?? DEFAULT_METRIC.ga4}
+                    onChange={e => onChange({ metric: e.target.value })}>
+              {GA4_METRICS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+            </select>
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Site</label>
+            <select className="filter-select" value={stage.site ?? ''}
+                    onChange={e => onChange({ site: e.target.value || undefined })}>
+              <option value="">All sites in the experiment</option>
+              {sites.map(s => (
+                <option key={s.key} value={s.key}>{s.emoji} {s.label}{s.connected ? '' : ' · not connected'}</option>
+              ))}
+            </select>
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+
 // ---- Builder form (create / edit) ----
-function DashboardBuilder({ initial, allTags, onSave, onCancel }) {
+function DashboardBuilder({ initial, allTags, sites, onSave, onCancel }) {
   const [name, setName]               = useState(initial?.name ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [stages, setStages]           = useState(
@@ -118,7 +189,17 @@ function DashboardBuilder({ initial, allTags, onSave, onCancel }) {
 
   async function handleSave() {
     if (!name.trim()) { setError('Give your dashboard a name (e.g. L-A-P-S).'); return }
-    const valid = stages.filter(s => s.label.trim())
+    const valid = stages
+      .filter(s => s.label.trim())
+      .map(s => {
+        // Keep only the fields that matter for the chosen source
+        const source = stageSource(s)
+        const base = { key: s.key, label: s.label.trim(), emoji: s.emoji, color: s.color, source }
+        if (source === 'tags') return { ...base, tags: s.tags ?? [] }
+        const out = { ...base, metric: s.metric ?? DEFAULT_METRIC[source] }
+        if (source === 'ga4' && s.site) out.site = s.site
+        return out
+      })
     if (valid.length < 2) { setError('Add at least 2 stages with labels.'); return }
     setSaving(true)
     setError(null)
@@ -146,7 +227,7 @@ function DashboardBuilder({ initial, allTags, onSave, onCancel }) {
         </div>
         <div className="filter-group" style={{ flex: 1 }}>
           <label className="filter-label">Description (optional)</label>
-          <input type="text" className="filter-input" placeholder="Lead → Applicant → Placement → Success"
+          <input type="text" className="filter-input" placeholder="Impressions → Visits → Leads → Placements"
             value={description} onChange={e => setDescription(e.target.value)} style={{ width: '100%' }} />
         </div>
       </div>
@@ -192,14 +273,8 @@ function DashboardBuilder({ initial, allTags, onSave, onCancel }) {
               </div>
             </div>
 
-            <div className="filter-group">
-              <label className="filter-label">Tags counted in this stage</label>
-              <TagPicker
-                allTags={allTags}
-                selected={stage.tags ?? []}
-                onChange={tags => setStage(idx, { tags })}
-              />
-            </div>
+            <SourceControls stage={stage} allTags={allTags} sites={sites}
+                            onChange={patch => setStage(idx, patch)} />
 
             <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', alignSelf: 'center' }}>
               <button type="button" className="chart-toggle-btn" title="Move up"
@@ -212,6 +287,13 @@ function DashboardBuilder({ initial, allTags, onSave, onCancel }) {
           </div>
         ))}
       </div>
+
+      <p style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 10 }}>
+        <strong>Lead tags</strong> count leads created in the period. <strong>LinkedIn</strong> and{' '}
+        <strong>Google Analytics</strong> stages sum the metric over the same period — inside an
+        experiment that's the posting window, across the accounts and sites the experiment selects;
+        on this page it's every connected account and site.
+      </p>
 
       <div style={{ display: 'flex', gap: 10, marginTop: 16, alignItems: 'center' }}>
         <button type="button" className="chart-toggle-btn"
@@ -233,10 +315,13 @@ function DashboardBuilder({ initial, allTags, onSave, onCancel }) {
 // ---- Main page ----
 export default function CustomDashboardsPage() {
   const { dashboards, loading, createDashboard, updateDashboard, deleteDashboard } = useCustomDashboards()
+  const { ga4 } = useIntegrations()
   const [selectedId, setSelectedId] = useState(null)
   const [editing, setEditing]       = useState(null)   // null | 'new' | dashboard object
   const [chartView, setChartView]   = useState('funnel')
   const [filters, setFilters]       = useState({ startDate: '', endDate: '' })
+
+  const sites = useMemo(() => mergeSites(ga4), [ga4])
 
   // All tags + counts (also drives the stage counts for the selected range)
   const { data: tagData, loading: tagsLoading } = useTagBreakdown({
@@ -257,13 +342,21 @@ export default function CustomDashboardsPage() {
   const selected = dashboards.find(d => d.id === selectedId)
     ?? (dashboards.length ? dashboards[0] : null)
 
-  // Raw counts per stage — each lead is counted once, in its current stage
+  // LinkedIn / GA4 sums for the same range — only fetched when a stage needs them
+  const need = useMemo(() => externalNeeds(selected?.stages), [selected])
+  const external = useExternalDaily({
+    startDate: filters.startDate || undefined,
+    endDate:   filters.endDate   || undefined,
+    need,
+  })
+
   const stagesWithCounts = useMemo(
     () => selected
-      ? computeStageCounts(selected.stages, tagData?.raw)
+      ? resolveStageCounts(selected.stages, { tagRows: tagData?.raw, linkedin: external.linkedin, ga4: external.ga4 })
       : [],
-    [selected, tagData]
+    [selected, tagData, external.linkedin, external.ga4]
   )
+  const missing = stagesWithCounts.filter(s => s.noData)
 
   async function handleSave(payload) {
     if (editing === 'new') {
@@ -285,13 +378,14 @@ export default function CustomDashboardsPage() {
     <div>
       <div className="page-header">
         <h1>🧩 Custom Dashboards</h1>
-        <p>Build your own funnel (e.g. L-A-P-S) by grouping lead tags into stages</p>
+        <p>Build your own funnel by combining lead tags, LinkedIn metrics and site traffic into stages</p>
       </div>
 
       {editing ? (
         <DashboardBuilder
           initial={editing === 'new' ? null : editing}
           allTags={allTags}
+          sites={sites}
           onSave={handleSave}
           onCancel={() => setEditing(null)}
         />
@@ -341,13 +435,13 @@ export default function CustomDashboardsPage() {
 
           {/* Visualisation */}
           <div className="chart-section">
-            {loading || tagsLoading ? (
+            {loading || tagsLoading || external.loading ? (
               <div className="spinner-wrap"><div className="spinner" /></div>
             ) : !selected ? (
               <div className="empty-state">
                 <p>No custom dashboards yet. Click <strong>+ New dashboard</strong> to build
-                your first one — for example <strong>L-A-P-S</strong> — and map your lead
-                tags to each stage.</p>
+                your first one — for example <strong>Impressions → Visits → Leads → Placements</strong> —
+                mixing lead tags with LinkedIn and Google Analytics metrics.</p>
               </div>
             ) : (
               <>
@@ -371,6 +465,14 @@ export default function CustomDashboardsPage() {
                   </div>
                 </div>
 
+                {missing.length > 0 && (
+                  <p style={{ fontSize: 12, color: '#b45309', margin: '0 0 12px' }}>
+                    ⚠️ No {missing.map(s => stageSource(s) === 'linkedin' ? 'LinkedIn' : 'Google Analytics')
+                              .filter((v, i, a) => a.indexOf(v) === i).join(' / ')} data for this period
+                    ({missing.map(s => s.label).join(', ')} show 0). Import or sync in Settings.
+                  </p>
+                )}
+
                 {chartView === 'funnel' && (
                   <CustomFunnelChart
                     stages={stagesWithCounts}
@@ -381,6 +483,7 @@ export default function CustomDashboardsPage() {
                 {chartView === 'table' && (
                   <CustomTableView
                     stages={stagesWithCounts}
+                    sites={sites}
                     filters={filters}
                     namePrefix={selected.name}
                   />
