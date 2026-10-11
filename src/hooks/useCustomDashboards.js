@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../supabase'
+import { resolveStageCounts } from '../lib/stageCounts'
 
 /**
  * CRUD for user-defined funnels (custom_dashboards table).
  *
  * A dashboard:
- *   { id, name, description, stages: [{ key, label, emoji, color, tags: [] }] }
+ *   { id, name, description, stages: [{ key, label, emoji, color, source, tags, metric, site }] }
+ *   source: 'tags' (default) | 'linkedin' | 'ga4' — see constants/stageSources
  */
 export function useCustomDashboards() {
   const [dashboards, setDashboards] = useState([])
@@ -68,17 +70,9 @@ export function useCustomDashboards() {
 }
 
 /**
- * Compute lead counts for each custom stage from the aarrr_tag_breakdown
- * raw rows ([{ stage, tag, count }]). A custom stage's count is the sum
- * of counts of every tag assigned to it (each lead carries one tag).
+ * Tag-only stage counts (legacy signature). Prefer resolveStageCounts
+ * from lib/stageCounts when LinkedIn / GA4 data is available.
  */
 export function computeStageCounts(stages, tagRows) {
-  const totals = {}
-  for (const row of tagRows ?? []) {
-    totals[row.tag] = (totals[row.tag] ?? 0) + row.count
-  }
-  return (stages ?? []).map(st => ({
-    ...st,
-    count: (st.tags ?? []).reduce((sum, t) => sum + (totals[t] ?? 0), 0),
-  }))
+  return resolveStageCounts(stages, { tagRows })
 }

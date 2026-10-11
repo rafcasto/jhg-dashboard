@@ -9,8 +9,11 @@ import { useIntegrations } from '../hooks/useIntegrations'
 import { useExperimentImpact } from '../hooks/useExperimentImpact'
 import { useFunnelMetrics } from '../hooks/useFunnelMetrics'
 import { useTagBreakdown } from '../hooks/useTagBreakdown'
-import { useCustomDashboards, computeStageCounts } from '../hooks/useCustomDashboards'
-import { formatDate, daysBetween } from '../lib/experimentWindow'
+import { useCustomDashboards } from '../hooks/useCustomDashboards'
+import { useExternalDaily } from '../hooks/useExternalDaily'
+import { resolveStageCounts, externalNeeds } from '../lib/stageCounts'
+import { isExternal, describeStageSource } from '../constants/stageSources'
+import { formatDate, daysBetween, experimentWindow, pctChange, fmtNum } from '../lib/experimentWindow'
 import ImpactChart from '../components/experiments/ImpactChart'
 import { StatTile, TileGroup } from '../components/experiments/ImpactTiles'
 
@@ -28,9 +31,11 @@ const STATUS_STYLE = {
 }
 
 // ---- Shared actual-vs-target progress row ----
-function TargetRow({ stage, actual, target, editing, draft, onDraftChange }) {
+function TargetRow({ stage, actual, target, editing, draft, onDraftChange, before, noData, sourceLabel }) {
   const pct = target > 0 ? Math.min(999, Math.round((actual / target) * 100)) : null
   const barPct = target > 0 ? Math.min(100, (actual / target) * 100) : 0
+  const delta = before === undefined || before === null ? null : pctChange(before, actual)
+  const up = delta !== null && delta > 0.5, down = delta !== null && delta < -0.5
 
   return (
     <div style={{
@@ -51,6 +56,9 @@ function TargetRow({ stage, actual, target, editing, draft, onDraftChange }) {
                 title="Counted as unique people (distinct email per stage)">
             unique · by email
           </span>
+        )}
+        {sourceLabel && (
+          <span className="metric-badge" title="Summed over the posting window">{sourceLabel}</span>
         )}
       </div>
 
@@ -78,6 +86,19 @@ function TargetRow({ stage, actual, target, editing, draft, onDraftChange }) {
         <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18 }}>
           {actual.toLocaleString()}
         </div>
+        {noData ? (
+          <div style={{ fontSize: 11, color: '#b45309', whiteSpace: 'nowrap' }}
+               title="No LinkedIn / GA4 rows for this window. Check the experiment's channels and sites, and import or sync in Settings.">
+            no data for window
+          </div>
+        ) : before !== undefined && before !== null ? (
+          <div style={{ fontSize: 11, whiteSpace: 'nowrap',
+                        color: up ? '#166534' : down ? '#b91c1c' : 'var(--fg-3)' }}
+               title="vs the baseline window before posting started">
+            {delta === null ? 'no baseline' : `${up ? '▲' : down ? '▼' : '■'} ${Math.abs(delta).toFixed(0)}%`}
+            <span style={{ color: 'var(--fg-3)' }}> · {fmtNum(before)} before</span>
+          </div>
+        ) : null}
       </div>
 
       <div style={{ textAlign: 'right' }}>
@@ -113,16 +134,18 @@ function TargetRow({ stage, actual, target, editing, draft, onDraftChange }) {
 }
 
 // ============================================================
-// Funnel actuals — leads created inside the posting window
+// Funnel actuals — lead tags created inside the posting window (and
+// the baseline window before it). LinkedIn / GA4 stages are resolved
+// in the card from useExperimentImpact, which already has both windows.
 // ============================================================
 function useExperimentActuals(exp, dashboard) {
-  const [rows, setRows]       = useState([])
-  const [loading, setLoading] = useState(true)
+  const [state, setState] = useState({ aarrr: null, tagRows: [], baseTagRows: [], loading: true })
+  const win = useMemo(() => experimentWindow(exp), [exp])
 
   useEffect(() => {
     let cancelled = false
     async function fetch() {
-      setLoading(true)
+      setState(s => ({ ...s, loading: true }))
       const pStart = `${exp.start_date}T00:00:00`
       const pEnd   = exp.end_date ? `${exp.end_date}T23:59:59.999` : null
 
@@ -131,24 +154,38 @@ function useExperimentActuals(exp, dashboard) {
           p_start: pStart, p_end: pEnd, p_source: null,
         })
         if (cancelled) return
-        setRows(STAGES.map(s => ({ stage: s, actual: data?.[s.key] ?? 0 })))
-      } else if (dashboard) {
-        const { data } = await supabase.rpc('aarrr_tag_breakdown', {
-          p_start: pStart, p_end: pEnd, p_stage: null,
-        })
-        if (cancelled) return
-        const stages = computeStageCounts(dashboard.stages, data)
-        setRows(stages.map(s => ({ stage: s, actual: s.count ?? 0 })))
-      } else {
-        setRows([])
+        setState({ aarrr: data ?? {}, tagRows: [], baseTagRows: [], loading: false })
+        return
       }
-      setLoading(false)
+
+      const hasTagStages = (dashboard?.stages ?? []).some(s => !isExternal(s))
+      if (!dashboard || !hasTagStages) {
+        if (!cancelled) setState({ aarrr: null, tagRows: [], baseTagRows: [], loading: false })
+        return
+      }
+      const [post, base] = await Promise.all([
+        supabase.rpc('aarrr_tag_breakdown', { p_start: pStart, p_end: pEnd, p_stage: null }),
+        supabase.rpc('aarrr_tag_breakdown', {
+          p_start: `${win.baseStart}T00:00:00`, p_end: `${win.baseEnd}T23:59:59.999`, p_stage: null,
+        }),
+      ])
+      if (cancelled) return
+      setState({ aarrr: null, tagRows: post.data ?? [], baseTagRows: base.data ?? [], loading: false })
     }
     fetch()
     return () => { cancelled = true }
-  }, [exp.id, exp.start_date, exp.end_date, exp.dashboard_id, dashboard])
+  }, [exp.id, exp.start_date, exp.end_date, exp.dashboard_id, dashboard, win.baseStart, win.baseEnd])
 
-  return { rows, loading }
+  return state
+}
+
+/** Shape useExperimentImpact's before/after sums the way resolveStageCounts wants them. */
+function impactAsExternal(impact, win) {
+  return {
+    linkedin: { hasData: impact.awareness.hasData, totals: impact.awareness[win] },
+    ga4: Object.fromEntries(Object.entries(impact.sites).map(([k, s]) =>
+      [k, { hasData: s.hasData, totals: s[win] }])),
+  }
 }
 
 // ============================================================
@@ -156,8 +193,19 @@ function useExperimentActuals(exp, dashboard) {
 // ============================================================
 function ExperimentCard({ exp, dashboard, sites, channels, onEdit, onDelete }) {
   const impact = useExperimentImpact(exp)
-  const { rows, loading } = useExperimentActuals(exp, dashboard)
+  const { aarrr, tagRows, baseTagRows, loading } = useExperimentActuals(exp, dashboard)
   const status = experimentStatus(exp)
+
+  const rows = useMemo(() => {
+    if (!exp.dashboard_id) return STAGES.map(s => ({ stage: s, actual: aarrr?.[s.key] ?? 0 }))
+    if (!dashboard) return []
+    const after  = resolveStageCounts(dashboard.stages, { tagRows,               ...impactAsExternal(impact, 'after') })
+    const before = resolveStageCounts(dashboard.stages, { tagRows: baseTagRows,  ...impactAsExternal(impact, 'before') })
+    return after.map((s, i) => ({
+      stage: s, actual: s.count ?? 0, before: before[i]?.count ?? 0, noData: s.noData,
+      sourceLabel: describeStageSource(s, sites.find(x => x.key === s.site)?.label),
+    }))
+  }, [exp.dashboard_id, dashboard, aarrr, tagRows, baseTagRows, impact.awareness, impact.sites, sites])
   const st = STATUS_STYLE[status]
 
   const chosenChannels = channels.filter(c => (exp.channels ?? []).includes(c.id))
@@ -273,7 +321,7 @@ function ExperimentCard({ exp, dashboard, sites, channels, onEdit, onDelete }) {
                   <StatTile label="Sessions" emoji="🧭" color={s.color}
                             before={site.before.sessions} after={site.after.sessions} />
                   <StatTile label="Users" emoji="👤" color={s.color}
-                            before={site.before.users} after={site.after.users} />
+                            before={site.before.total_users} after={site.after.total_users} />
                   <StatTile label="New users" emoji="✨" color={s.color}
                             before={site.before.new_users} after={site.after.new_users} />
                   <StatTile label="Key events" emoji="🎯" color={s.color}
@@ -314,7 +362,7 @@ function ExperimentCard({ exp, dashboard, sites, channels, onEdit, onDelete }) {
       {/* ---- Funnel targets ---- */}
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
                     color: 'var(--fg-3)', margin: '20px 0 8px' }}>
-        Funnel — leads created in the posting window
+        Funnel — posting window{exp.dashboard_id ? ' (vs baseline)' : ''}
       </div>
       {loading ? (
         <div className="spinner-wrap"><div className="spinner" /></div>
@@ -324,6 +372,7 @@ function ExperimentCard({ exp, dashboard, sites, channels, onEdit, onDelete }) {
         <div style={{ border: '1px solid var(--jh-line)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
           {rows.map(row => (
             <TargetRow key={row.stage.key} stage={row.stage} actual={row.actual}
+                       before={row.before} noData={row.noData} sourceLabel={row.sourceLabel}
                        target={targets[row.stage.key] ?? 0} />
           ))}
         </div>
@@ -500,7 +549,7 @@ function ExperimentForm({ initial, dashboards, sites, channels, onSave, onCancel
         </div>
         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
                        color: 'var(--fg-3)', paddingBottom: 9 }}>
-          Targets per stage (leads created in the window — leave 0 to skip)
+          Targets per stage (counted over the posting window — leave 0 to skip)
         </span>
       </div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -547,15 +596,18 @@ function OverallTab() {
   const { data: tagData, loading: tagsLoading } = useTagBreakdown({})
 
   const selectedDashboard = dashboards.find(d => d.id === scope)
+  const need = useMemo(() => externalNeeds(selectedDashboard?.stages), [selectedDashboard])
+  const external = useExternalDaily({ need })   // all time, every account / site
 
   const rows = useMemo(() => {
     if (scope === 'aarrr') {
       return STAGES.map(s => ({ stage: s, actual: metrics?.[s.key] ?? 0 }))
     }
     if (!selectedDashboard) return []
-    return computeStageCounts(selectedDashboard.stages, tagData?.raw)
-      .map(s => ({ stage: s, actual: s.count ?? 0 }))
-  }, [scope, metrics, selectedDashboard, tagData])
+    return resolveStageCounts(selectedDashboard.stages,
+                              { tagRows: tagData?.raw, linkedin: external.linkedin, ga4: external.ga4 })
+      .map(s => ({ stage: s, actual: s.count ?? 0, noData: s.noData, sourceLabel: describeStageSource(s) }))
+  }, [scope, metrics, selectedDashboard, tagData, external.linkedin, external.ga4])
 
   const scopeTargets = targets[scope] ?? {}
 
@@ -586,7 +638,7 @@ function OverallTab() {
     setSaving(false)
   }
 
-  const loading = targetsLoading || (scope === 'aarrr' ? metricsLoading : tagsLoading)
+  const loading = targetsLoading || (scope === 'aarrr' ? metricsLoading : tagsLoading || external.loading)
 
   const summary = useMemo(() => {
     const withTargets = rows.filter(r => (scopeTargets[r.stage.key]?.target_count ?? 0) > 0)
@@ -659,6 +711,8 @@ function OverallTab() {
                 key={row.stage.key}
                 stage={row.stage}
                 actual={row.actual}
+                noData={row.noData}
+                sourceLabel={row.sourceLabel}
                 target={scopeTargets[row.stage.key]?.target_count ?? 0}
                 editing={editing}
                 draft={drafts[row.stage.key] ?? ''}

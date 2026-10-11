@@ -1,3 +1,4 @@
+import { isExternal, describeStageSource } from '../../constants/stageSources'
 import ExportButton from '../ExportButton'
 
 /**
@@ -6,11 +7,12 @@ import ExportButton from '../ExportButton'
  * conversion from previous stage, the tags mapped to the stage, and a
  * per-stage CSV export of the (unique) leads sitting in that stage.
  *
- * stages:  [{ key, label, emoji, color, count, tags }]
+ * stages:  [{ key, label, emoji, color, count, tags | metric/site }]
+ * sites:   merged site list (for GA4 stage labels)
  * filters: { startDate, endDate }  — scopes the export to the same window
  * namePrefix: string               — prepended to export filenames
  */
-export default function CustomTableView({ stages, filters = {}, namePrefix = '' }) {
+export default function CustomTableView({ sites = [], stages, filters = {}, namePrefix = '' }) {
   if (!stages?.length) return <div className="empty-state"><p>No stages defined yet</p></div>
 
   const top = Math.max(1, stages[0]?.count ?? 0)
@@ -63,7 +65,12 @@ export default function CustomTableView({ stages, filters = {}, namePrefix = '' 
                 </td>
                 <td style={{ ...td, textAlign: 'left' }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 360 }}>
-                    {(s.tags ?? []).length === 0
+                    {isExternal(s)
+                      ? <span className="metric-badge" title={describeStageSource(s, sites.find(x => x.key === s.site)?.label)}>
+                          {describeStageSource(s, sites.find(x => x.key === s.site)?.label)}
+                          {s.noData ? ' · no data' : ''}
+                        </span>
+                      : (s.tags ?? []).length === 0
                       ? <span style={{ color: 'var(--fg-4)', fontSize: 12 }}>—</span>
                       : s.tags.map(t => (
                           <span key={t} title={t} style={{
@@ -79,18 +86,22 @@ export default function CustomTableView({ stages, filters = {}, namePrefix = '' 
                   </div>
                 </td>
                 <td style={{ ...td, textAlign: 'center' }}>
-                  <ExportButton
-                    label="⬇ CSV"
-                    filename={[namePrefix, s.label, 'leads'].filter(Boolean).join('-')}
-                    title={`Download unique leads in "${s.label}" as CSV`}
-                    style={{ padding: '5px 12px', fontSize: 11 }}
-                    params={{
-                      tags:          s.tags ?? [],
-                      startDate:     filters.startDate || undefined,
-                      endDate:       filters.endDate   || undefined,
-                      uniqueByEmail: true,
-                    }}
-                  />
+                  {isExternal(s) ? (
+                    <span style={{ color: 'var(--fg-4)', fontSize: 12 }} title="Metric stages have no leads to export">—</span>
+                  ) : (
+                    <ExportButton
+                      label="⬇ CSV"
+                      filename={[namePrefix, s.label, 'leads'].filter(Boolean).join('-')}
+                      title={`Download unique leads in "${s.label}" as CSV`}
+                      style={{ padding: '5px 12px', fontSize: 11 }}
+                      params={{
+                        tags:          s.tags ?? [],
+                        startDate:     filters.startDate || undefined,
+                        endDate:       filters.endDate   || undefined,
+                        uniqueByEmail: true,
+                      }}
+                    />
+                  )}
                 </td>
               </tr>
             )
@@ -98,7 +109,8 @@ export default function CustomTableView({ stages, filters = {}, namePrefix = '' 
         </tbody>
       </table>
       <p style={{ fontSize: 11, color: 'var(--fg-4)', marginTop: 8, paddingLeft: 4 }}>
-        <strong>Leads</strong> = leads whose tag sits in this stage today (each lead counted once)
+        <strong>Count</strong> = leads whose tag sits in this stage (each lead counted once), or the
+        LinkedIn / Google Analytics metric summed over the period
       </p>
     </div>
   )
