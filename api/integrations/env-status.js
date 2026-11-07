@@ -11,7 +11,7 @@ export default async function handler(req, res) {
         client_id:     !!process.env.LINKEDIN_CLIENT_ID,
         client_secret: !!process.env.LINKEDIN_CLIENT_SECRET,
         redirect_uri:  redirectUri(),
-        api_version:   process.env.LINKEDIN_API_VERSION || '202508',
+        api_version:   process.env.LINKEDIN_API_VERSION || '202610',
       },
       cron: { secret: !!process.env.CRON_SECRET, schedule: '03:00 UTC daily' },
     })

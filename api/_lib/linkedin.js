@@ -20,7 +20,7 @@ import { createHmac, randomBytes } from 'node:crypto'
 const AUTH_URL  = 'https://www.linkedin.com/oauth/v2/authorization'
 const TOKEN_URL = 'https://www.linkedin.com/oauth/v2/accessToken'
 const API       = 'https://api.linkedin.com'
-const VERSION   = process.env.LINKEDIN_API_VERSION || '202508'
+const VERSION   = process.env.LINKEDIN_API_VERSION || '202610'
 const SCOPES    = process.env.LINKEDIN_SCOPES
   || 'r_basicprofile r_member_postAnalytics r_organization_social r_organization_admin'
 
