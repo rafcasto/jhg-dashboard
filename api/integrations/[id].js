@@ -1,7 +1,7 @@
 // PATCH  /api/integrations/:id  — update label / site / config / secrets (admin)
 // DELETE /api/integrations/:id  — disconnect (admin; cascades metrics + secrets)
 import { supabaseAdmin, requireAdmin, sendError, HttpError } from '../_lib/admin.js'
-import { parseServiceAccount } from './index.js'
+import { parseServiceAccount, verifyKitKey } from './index.js'
 
 export default async function handler(req, res) {
   try {
@@ -36,6 +36,14 @@ export default async function handler(req, res) {
           if (error) throw new Error(error.message)
           patch.status = 'connected'; patch.last_error = null
         }
+      }
+      if (integ.kind === 'kit' && String(secrets.api_key ?? '').trim()) {
+        const apiKey = String(secrets.api_key).trim()
+        Object.assign(nextConfig, await verifyKitKey(apiKey))
+        const { error } = await supabaseAdmin.from('integration_secrets')
+          .upsert({ integration_id: id, secrets: { api_key: apiKey }, updated_at: new Date().toISOString() })
+        if (error) throw new Error(error.message)
+        patch.status = 'connected'; patch.last_error = null
       }
       if (integ.kind === 'linkedin' && 'author_urn' in config) {
         const org = (integ.config?.orgs ?? []).find(o => o.urn === config.author_urn)

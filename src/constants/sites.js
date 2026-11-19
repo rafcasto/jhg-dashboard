@@ -12,6 +12,7 @@ export const DEFAULT_SITES = [
 ]
 
 export const AWARENESS_COLOR = '#7a1ec2'   // matches the Awareness stage
+export const EMAIL_COLOR     = '#0f766e'   // Kit email broadcasts
 
 const EXTRA_COLORS = ['#c2001f', '#0f766e', '#6b7280']
 

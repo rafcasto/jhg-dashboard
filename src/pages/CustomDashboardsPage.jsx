@@ -3,8 +3,9 @@ import { useCustomDashboards } from '../hooks/useCustomDashboards'
 import { useTagBreakdown } from '../hooks/useTagBreakdown'
 import { useIntegrations } from '../hooks/useIntegrations'
 import { useExternalDaily } from '../hooks/useExternalDaily'
+import { useEmailSequences } from '../hooks/useEmailSequences'
 import { mergeSites } from '../constants/sites'
-import { STAGE_SOURCES, LINKEDIN_METRICS, GA4_METRICS, DEFAULT_METRIC, stageSource } from '../constants/stageSources'
+import { STAGE_SOURCES, LINKEDIN_METRICS, GA4_METRICS, KIT_METRICS, DEFAULT_METRIC, EMAIL_SCOPE_BROADCASTS, stageSource } from '../constants/stageSources'
 import { resolveStageCounts, externalNeeds } from '../lib/stageCounts'
 import CustomFunnelChart from '../components/charts/CustomFunnelChart'
 import CustomBarChart   from '../components/charts/CustomBarChart'
@@ -96,15 +97,15 @@ function TagPicker({ allTags, selected, onChange }) {
   )
 }
 
-// ---- What a stage counts: tags, a LinkedIn metric, or a GA4 metric ----
-function SourceControls({ stage, allTags, sites, onChange }) {
+// ---- What a stage counts: tags, a LinkedIn metric, a Kit email metric, or a GA4 metric ----
+function SourceControls({ stage, allTags, sites, sequences, onChange }) {
   const source = stageSource(stage)
 
   function setSource(next) {
     if (next === source) return
     onChange(next === 'tags'
       ? { source: 'tags', tags: stage.tags ?? [], metric: undefined, site: undefined }
-      : { source: next, metric: DEFAULT_METRIC[next], site: undefined })
+      : { source: next, metric: DEFAULT_METRIC[next], site: undefined, sequence: undefined })
   }
 
   return (
@@ -136,6 +137,31 @@ function SourceControls({ stage, allTags, sites, onChange }) {
         </div>
       )}
 
+      {source === 'kit' && (
+        <>
+          <div className="filter-group">
+            <label className="filter-label">Metric</label>
+            <select className="filter-select" value={stage.metric ?? DEFAULT_METRIC.kit}
+                    onChange={e => onChange({ metric: e.target.value })}>
+              {KIT_METRICS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+            </select>
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Email</label>
+            <select className="filter-select" value={stage.sequence ?? ''}
+                    onChange={e => onChange({ sequence: e.target.value || undefined })}>
+              <option value="">All email (broadcasts + sequences)</option>
+              <option value={EMAIL_SCOPE_BROADCASTS}>📨 Broadcasts only</option>
+              {sequences.map(s => (
+                <option key={`${s.integration_id}:${s.sequence_id}`} value={s.sequence_id}>
+                  🔁 {s.name}{s.active ? '' : ' · paused'}
+                </option>
+              ))}
+            </select>
+          </div>
+        </>
+      )}
+
       {source === 'ga4' && (
         <>
           <div className="filter-group">
@@ -162,7 +188,7 @@ function SourceControls({ stage, allTags, sites, onChange }) {
 }
 
 // ---- Builder form (create / edit) ----
-function DashboardBuilder({ initial, allTags, sites, onSave, onCancel }) {
+function DashboardBuilder({ initial, allTags, sites, sequences, onSave, onCancel }) {
   const [name, setName]               = useState(initial?.name ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [stages, setStages]           = useState(
@@ -197,7 +223,8 @@ function DashboardBuilder({ initial, allTags, sites, onSave, onCancel }) {
         const base = { key: s.key, label: s.label.trim(), emoji: s.emoji, color: s.color, source }
         if (source === 'tags') return { ...base, tags: s.tags ?? [] }
         const out = { ...base, metric: s.metric ?? DEFAULT_METRIC[source] }
-        if (source === 'ga4' && s.site) out.site = s.site
+        if (source === 'ga4' && s.site)     out.site     = s.site
+        if (source === 'kit' && s.sequence) out.sequence = s.sequence
         return out
       })
     if (valid.length < 2) { setError('Add at least 2 stages with labels.'); return }
@@ -273,7 +300,7 @@ function DashboardBuilder({ initial, allTags, sites, onSave, onCancel }) {
               </div>
             </div>
 
-            <SourceControls stage={stage} allTags={allTags} sites={sites}
+            <SourceControls stage={stage} allTags={allTags} sites={sites} sequences={sequences}
                             onChange={patch => setStage(idx, patch)} />
 
             <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', alignSelf: 'center' }}>
@@ -289,8 +316,9 @@ function DashboardBuilder({ initial, allTags, sites, onSave, onCancel }) {
       </div>
 
       <p style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 10 }}>
-        <strong>Lead tags</strong> count leads created in the period. <strong>LinkedIn</strong> and{' '}
-        <strong>Google Analytics</strong> stages sum the metric over the same period — inside an
+        <strong>Lead tags</strong> count leads created in the period. <strong>LinkedIn</strong>,{' '}
+        <strong>Kit email</strong> and <strong>Google Analytics</strong> stages sum the metric over the same period (a Kit stage can
+        read all email, broadcasts only, or one sequence) — inside an
         experiment that's the posting window, across the accounts and sites the experiment selects;
         on this page it's every connected account and site.
       </p>
@@ -322,6 +350,7 @@ export default function CustomDashboardsPage() {
   const [filters, setFilters]       = useState({ startDate: '', endDate: '' })
 
   const sites = useMemo(() => mergeSites(ga4), [ga4])
+  const sequences = useEmailSequences()
 
   // All tags + counts (also drives the stage counts for the selected range)
   const { data: tagData, loading: tagsLoading } = useTagBreakdown({
@@ -352,9 +381,9 @@ export default function CustomDashboardsPage() {
 
   const stagesWithCounts = useMemo(
     () => selected
-      ? resolveStageCounts(selected.stages, { tagRows: tagData?.raw, linkedin: external.linkedin, ga4: external.ga4 })
+      ? resolveStageCounts(selected.stages, { tagRows: tagData?.raw, linkedin: external.linkedin, ga4: external.ga4, kit: external.kit })
       : [],
-    [selected, tagData, external.linkedin, external.ga4]
+    [selected, tagData, external.linkedin, external.ga4, external.kit]
   )
   const missing = stagesWithCounts.filter(s => s.noData)
 
@@ -378,7 +407,7 @@ export default function CustomDashboardsPage() {
     <div>
       <div className="page-header">
         <h1>🧩 Custom Dashboards</h1>
-        <p>Build your own funnel by combining lead tags, LinkedIn metrics and site traffic into stages</p>
+        <p>Build your own funnel by combining lead tags, LinkedIn metrics, Kit email stats and site traffic into stages</p>
       </div>
 
       {editing ? (
@@ -386,6 +415,7 @@ export default function CustomDashboardsPage() {
           initial={editing === 'new' ? null : editing}
           allTags={allTags}
           sites={sites}
+          sequences={sequences}
           onSave={handleSave}
           onCancel={() => setEditing(null)}
         />
@@ -467,7 +497,7 @@ export default function CustomDashboardsPage() {
 
                 {missing.length > 0 && (
                   <p style={{ fontSize: 12, color: '#b45309', margin: '0 0 12px' }}>
-                    ⚠️ No {missing.map(s => stageSource(s) === 'linkedin' ? 'LinkedIn' : 'Google Analytics')
+                    ⚠️ No {missing.map(s => ({ linkedin: 'LinkedIn', ga4: 'Google Analytics', kit: 'Kit email' })[stageSource(s)] ?? stageSource(s))
                               .filter((v, i, a) => a.indexOf(v) === i).join(' / ')} data for this period
                     ({missing.map(s => s.label).join(', ')} show 0). Import or sync in Settings.
                   </p>
@@ -484,6 +514,7 @@ export default function CustomDashboardsPage() {
                   <CustomTableView
                     stages={stagesWithCounts}
                     sites={sites}
+                    sequences={sequences}
                     filters={filters}
                     namePrefix={selected.name}
                   />

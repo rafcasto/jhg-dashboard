@@ -5,6 +5,7 @@ import { useIntegrations } from '../hooks/useIntegrations'
 import { apiFetch } from '../lib/api'
 import LinkedInSection from '../components/settings/LinkedInSection'
 import GaSection from '../components/settings/GaSection'
+import KitSection from '../components/settings/KitSection'
 
 export default function SettingsPage() {
   const { role } = useAuth()
@@ -56,7 +57,7 @@ export default function SettingsPage() {
     <div>
       <div className="page-header">
         <h1>⚙️ Settings</h1>
-        <p>Connect the systems the dashboard reads from — LinkedIn for awareness, Google Analytics for downstream sites</p>
+        <p>Connect the systems the dashboard reads from — LinkedIn for awareness, Kit for email campaigns, Google Analytics for downstream sites</p>
       </div>
 
       {flash && (
@@ -69,6 +70,7 @@ export default function SettingsPage() {
       {integ.error && <div className="form-error">{integ.error}</div>}
 
       <LinkedInSection accounts={integ.linkedin} env={env} actions={integ} notify={notify} />
+      <KitSection accounts={integ.kit} actions={integ} notify={notify} />
       <GaSection sites={integ.ga4} actions={integ} notify={notify} />
 
       <div className="page-section">
