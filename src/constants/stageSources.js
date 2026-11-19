@@ -5,7 +5,7 @@
 //   linkedin  → a metric summed from awareness_daily
 //   ga4       → a metric summed from site_daily (one site, or all)
 //   kit       → a metric summed from email_daily (Kit broadcasts + sequences);
-//               `sequence` narrows it: '' all email | 'broadcasts' | a sequence id
+//               `email` narrows it — see EMAIL_SCOPE below
 //
 // A stage with no `source` is a legacy tag stage.
 // ============================================================
@@ -45,15 +45,38 @@ export const KIT_METRICS = [
   { key: 'entered',      label: 'Entered a sequence' },
 ]
 
-/** stage.sequence value meaning "broadcasts only" (empty = all email, else a Kit sequence id). */
-export const EMAIL_SCOPE_BROADCASTS = 'broadcasts'
+// ---- Email scope: what a Kit stage is narrowed to (stage.email) ----
+//   ''              all email (broadcasts + sequences)
+//   'broadcasts'    every broadcast
+//   'sequences'     every sequence
+//   'seq:<id>'      one Kit sequence
+//   'bc:<id>'       one Kit broadcast
+export const EMAIL_SCOPE = { ALL: '', BROADCASTS: 'broadcasts', SEQUENCES: 'sequences' }
+export const seqScope = id => `seq:${id}`
+export const bcScope  = id => `bc:${id}`
 
-/** "all email" / "broadcasts" / "sequence: <name>" — what a Kit stage is narrowed to. */
-export function emailScopeLabel(stage, sequences = []) {
-  if (!stage?.sequence) return 'all email'
-  if (stage.sequence === EMAIL_SCOPE_BROADCASTS) return 'broadcasts only'
-  const seq = sequences.find(s => s.sequence_id === stage.sequence)
-  return seq ? `sequence: ${seq.name}` : 'one sequence'
+/** Scope keys one email_daily row contributes to (its channel + its own id). */
+export function emailRowScopes(row) {
+  return row.channel === 'broadcast'
+    ? [EMAIL_SCOPE.BROADCASTS, row.broadcast_id ? bcScope(row.broadcast_id) : null].filter(Boolean)
+    : [EMAIL_SCOPE.SEQUENCES,  row.sequence_id  ? seqScope(row.sequence_id) : null].filter(Boolean)
+}
+
+/** "all email" / "all broadcasts" / "sequence: <name>" / "broadcast: <subject>". */
+export function emailScopeLabel(stage, catalog = {}) {
+  const s = stage?.email
+  if (!s) return 'all email'
+  if (s === EMAIL_SCOPE.BROADCASTS) return 'all broadcasts'
+  if (s === EMAIL_SCOPE.SEQUENCES)  return 'all sequences'
+  if (s.startsWith('seq:')) {
+    const seq = (catalog.sequences ?? []).find(x => x.sequence_id === s.slice(4))
+    return seq ? `sequence: ${seq.name}` : 'one sequence'
+  }
+  if (s.startsWith('bc:')) {
+    const b = (catalog.broadcasts ?? []).find(x => x.broadcast_id === s.slice(3))
+    return b ? `broadcast: ${b.subject ?? b.broadcast_id}` : 'one broadcast'
+  }
+  return s
 }
 
 export const METRICS_BY_SOURCE = { linkedin: LINKEDIN_METRICS, ga4: GA4_METRICS, kit: KIT_METRICS }
@@ -64,13 +87,13 @@ export const stageSource = stage => stage?.source ?? 'tags'
 export const isExternal  = stage => stageSource(stage) !== 'tags'
 
 /** "👀 LinkedIn · Impressions" / "🧭 Google Analytics · Sessions (EEC)" / "✉️ Kit email · Emails sent" / null for tag stages. */
-export function describeStageSource(stage, siteLabel, sequences = []) {
+export function describeStageSource(stage, siteLabel, emailCatalog = {}) {
   const src = STAGE_SOURCES.find(s => s.key === stageSource(stage))
   if (!src || src.key === 'tags') return null
   const list = METRICS_BY_SOURCE[src.key] ?? []
   const metric = list.find(m => m.key === stage.metric)?.label ?? stage.metric ?? '?'
   const where = src.key === 'ga4' ? ` · ${siteLabel ?? stage.site ?? 'all sites'}`
-              : src.key === 'kit' ? ` · ${emailScopeLabel(stage, sequences)}`
+              : src.key === 'kit' ? ` · ${emailScopeLabel(stage, emailCatalog)}`
               : ''
   return `${src.emoji} ${src.label} · ${metric}${where}`
 }
