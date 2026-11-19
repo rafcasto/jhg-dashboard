@@ -25,9 +25,16 @@ export function useIntegrations() {
 
   const linkedin = useMemo(() => integrations.filter(i => i.kind === 'linkedin'), [integrations])
   const ga4      = useMemo(() => integrations.filter(i => i.kind === 'ga4'),      [integrations])
+  const kit      = useMemo(() => integrations.filter(i => i.kind === 'kit'),      [integrations])
 
   const createGa4 = useCallback(async (payload) => {
     const data = await apiFetch('/api/integrations', { method: 'POST', body: { kind: 'ga4', ...payload } })
+    await refresh()
+    return data
+  }, [refresh])
+
+  const createKit = useCallback(async (payload) => {
+    const data = await apiFetch('/api/integrations', { method: 'POST', body: { kind: 'kit', ...payload } })
     await refresh()
     return data
   }, [refresh])
@@ -75,6 +82,6 @@ export function useIntegrations() {
     return url
   }, [])
 
-  return { integrations, linkedin, ga4, loading, error, refresh, linkedinInviteUrl,
-           createGa4, createLinkedinManual, update, remove, sync, importCsv, linkedinAuthUrl }
+  return { integrations, linkedin, ga4, kit, loading, error, refresh, linkedinInviteUrl,
+           createGa4, createKit, createLinkedinManual, update, remove, sync, importCsv, linkedinAuthUrl }
 }

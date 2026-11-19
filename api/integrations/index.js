@@ -1,7 +1,8 @@
 // GET  /api/integrations        — list (any dashboard user; secrets never returned)
-// POST /api/integrations        — create a GA4 site integration, or a manual
-//                                  (CSV-only) LinkedIn account (admin)
+// POST /api/integrations        — create a GA4 site integration, a Kit email
+//                                  account, or a manual (CSV-only) LinkedIn account (admin)
 import { supabaseAdmin, requireUser, requireAdmin, sendError, HttpError } from '../_lib/admin.js'
+import { verifyKey } from '../_lib/kit.js'
 
 export default async function handler(req, res) {
   try {
@@ -27,6 +28,20 @@ export default async function handler(req, res) {
           created_by: user.id,
         }).select().single()
         if (error) throw new Error(error.message)
+        return res.status(201).json(integ)
+      }
+      // Kit: API key only. Verified against /v4/account before anything is stored.
+      if (kind === 'kit') {
+        const apiKey = String(secrets.api_key ?? '').trim()
+        if (!apiKey) throw new HttpError(400, 'Kit API key is required')
+        const who = await verifyKitKey(apiKey)
+        const { data: integ, error } = await supabaseAdmin.from('integrations').insert({
+          kind, label: label.trim(), config: who, status: 'connected', created_by: user.id,
+        }).select().single()
+        if (error) throw new Error(error.message)
+        const { error: sErr } = await supabaseAdmin.from('integration_secrets')
+          .insert({ integration_id: integ.id, secrets: { api_key: apiKey } })
+        if (sErr) throw new Error(sErr.message)
         return res.status(201).json(integ)
       }
       if (kind !== 'ga4') throw new HttpError(400, `Unknown integration kind "${kind}"`)
@@ -61,6 +76,12 @@ export default async function handler(req, res) {
   } catch (e) {
     return sendError(res, e)
   }
+}
+
+/** Kit account details for a key, or a 400 explaining why the key is no good. */
+export async function verifyKitKey(apiKey) {
+  try { return await verifyKey(apiKey) }
+  catch (e) { throw new HttpError(400, e.message) }
 }
 
 export function parseServiceAccount(raw) {

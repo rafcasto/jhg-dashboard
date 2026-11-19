@@ -5,6 +5,8 @@
 //   tagRows:  [{ stage, tag, count }]                       aarrr_tag_breakdown rows
 //   linkedin: { hasData, totals: { impressions, … } }       summed over the window
 //   ga4:      { [siteKey]: { hasData, totals: { sessions, … } } }
+//   kit:      { hasData, totals: { recipients, opens, clicks, … },     all Kit email
+//               scopes: { broadcasts: {…}, [sequence_id]: {…} } }      narrowed by stage.sequence
 // })
 // → stages with `count` and `noData` (true when an external stage's
 //   source had no rows at all for the window — a 0 that means "unknown").
@@ -12,7 +14,7 @@
 
 import { stageSource } from '../constants/stageSources.js'
 
-export function resolveStageCounts(stages, { tagRows, linkedin, ga4 } = {}) {
+export function resolveStageCounts(stages, { tagRows, linkedin, ga4, kit } = {}) {
   const tagTotals = {}
   for (const row of tagRows ?? []) tagTotals[row.tag] = (tagTotals[row.tag] ?? 0) + row.count
 
@@ -26,6 +28,12 @@ export function resolveStageCounts(stages, { tagRows, linkedin, ga4 } = {}) {
     if (source === 'linkedin') {
       const n = Number(linkedin?.totals?.[st.metric] ?? 0)
       return { ...st, count: n, noData: !linkedin?.hasData }
+    }
+
+    if (source === 'kit') {
+      const pool = st.sequence ? kit?.scopes?.[st.sequence] : kit
+      const n = Number(pool?.totals?.[st.metric] ?? 0)
+      return { ...st, count: n, noData: !pool?.hasData }
     }
 
     if (source === 'ga4') {
@@ -45,8 +53,8 @@ export function sumRows(rows, fields) {
   return out
 }
 
-/** Does this dashboard need LinkedIn / GA4 data at all? */
+/** Does this dashboard need LinkedIn / GA4 / Kit data at all? */
 export function externalNeeds(stages) {
   const srcs = new Set((stages ?? []).map(stageSource))
-  return { linkedin: srcs.has('linkedin'), ga4: srcs.has('ga4') }
+  return { linkedin: srcs.has('linkedin'), ga4: srcs.has('ga4'), kit: srcs.has('kit') }
 }

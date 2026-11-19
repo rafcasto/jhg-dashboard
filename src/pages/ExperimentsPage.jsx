@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { STAGES } from '../constants/stages'
-import { AWARENESS_COLOR, mergeSites } from '../constants/sites'
+import { AWARENESS_COLOR, EMAIL_COLOR, mergeSites } from '../constants/sites'
 import { useTargets } from '../hooks/useTargets'
 import { useExperiments, experimentStatus } from '../hooks/useExperiments'
 import { useIntegrations } from '../hooks/useIntegrations'
@@ -11,6 +11,7 @@ import { useFunnelMetrics } from '../hooks/useFunnelMetrics'
 import { useTagBreakdown } from '../hooks/useTagBreakdown'
 import { useCustomDashboards } from '../hooks/useCustomDashboards'
 import { useExternalDaily } from '../hooks/useExternalDaily'
+import { useEmailSequences } from '../hooks/useEmailSequences'
 import { resolveStageCounts, externalNeeds } from '../lib/stageCounts'
 import { isExternal, describeStageSource } from '../constants/stageSources'
 import { formatDate, daysBetween, experimentWindow, pctChange, fmtNum } from '../lib/experimentWindow'
@@ -185,13 +186,18 @@ function impactAsExternal(impact, win) {
     linkedin: { hasData: impact.awareness.hasData, totals: impact.awareness[win] },
     ga4: Object.fromEntries(Object.entries(impact.sites).map(([k, s]) =>
       [k, { hasData: s.hasData, totals: s[win] }])),
+    kit: {
+      hasData: impact.email.hasData, totals: impact.email[win],
+      scopes: Object.fromEntries(Object.entries(impact.email.scopes).map(([k, s]) =>
+        [k, { hasData: s.hasData, totals: s[win] }])),
+    },
   }
 }
 
 // ============================================================
-// One experiment card: posting window → awareness → downstream → funnel
+// One experiment card: posting window → awareness / email → downstream → funnel
 // ============================================================
-function ExperimentCard({ exp, dashboard, sites, channels, onEdit, onDelete }) {
+function ExperimentCard({ exp, dashboard, sites, channels, emailChannels = [], sequences = [], onEdit, onDelete }) {
   const impact = useExperimentImpact(exp)
   const { aarrr, tagRows, baseTagRows, loading } = useExperimentActuals(exp, dashboard)
   const status = experimentStatus(exp)
@@ -203,14 +209,15 @@ function ExperimentCard({ exp, dashboard, sites, channels, onEdit, onDelete }) {
     const before = resolveStageCounts(dashboard.stages, { tagRows: baseTagRows,  ...impactAsExternal(impact, 'before') })
     return after.map((s, i) => ({
       stage: s, actual: s.count ?? 0, before: before[i]?.count ?? 0, noData: s.noData,
-      sourceLabel: describeStageSource(s, sites.find(x => x.key === s.site)?.label),
+      sourceLabel: describeStageSource(s, sites.find(x => x.key === s.site)?.label, sequences),
     }))
-  }, [exp.dashboard_id, dashboard, aarrr, tagRows, baseTagRows, impact.awareness, impact.sites, sites])
+  }, [exp.dashboard_id, dashboard, aarrr, tagRows, baseTagRows, impact.awareness, impact.email, impact.sites, sites, sequences])
   const st = STATUS_STYLE[status]
 
   const chosenChannels = channels.filter(c => (exp.channels ?? []).includes(c.id))
+  const chosenEmail    = emailChannels.filter(c => (exp.channels ?? []).includes(c.id))
   const chosenSites    = sites.filter(s => (exp.downstream_sites ?? []).includes(s.key))
-  const measuring      = chosenChannels.length > 0 || chosenSites.length > 0
+  const measuring      = chosenChannels.length > 0 || chosenEmail.length > 0 || chosenSites.length > 0
 
   const targets = exp.targets ?? {}
   const summary = useMemo(() => {
@@ -221,11 +228,17 @@ function ExperimentCard({ exp, dashboard, sites, channels, onEdit, onDelete }) {
   }, [rows, targets])
 
   const aw = impact.awareness
+  const em = impact.email
   const panels = [
     chosenChannels.length > 0 && {
       key: 'awareness', title: '👀 LinkedIn impressions', color: AWARENESS_COLOR,
       data: aw.daily.map(d => ({ date: d.date, value: d.impressions })),
       before: aw.before.impressions, after: aw.after.impressions, empty: !aw.hasData,
+    },
+    chosenEmail.length > 0 && {
+      key: 'email', title: '✉️ Emails sent (Kit)', color: EMAIL_COLOR,
+      data: em.daily.map(d => ({ date: d.date, value: d.recipients })),
+      before: em.before.recipients, after: em.after.recipients, empty: !em.hasData,
     },
     ...chosenSites.map(s => {
       const site = impact.sites[s.key]
@@ -256,6 +269,9 @@ function ExperimentCard({ exp, dashboard, sites, channels, onEdit, onDelete }) {
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
             {chosenChannels.map(c => (
               <span key={c.id} className="chip" style={{ '--c': AWARENESS_COLOR }}>in {c.label}</span>
+            ))}
+            {chosenEmail.map(c => (
+              <span key={c.id} className="chip" style={{ '--c': EMAIL_COLOR }}>✉️ {c.label}</span>
             ))}
             {chosenSites.map(s => (
               <span key={s.key} className="chip" style={{ '--c': s.color }}>{s.emoji} {s.label}</span>
@@ -288,7 +304,8 @@ function ExperimentCard({ exp, dashboard, sites, channels, onEdit, onDelete }) {
       {!measuring ? (
         <div className="empty-state" style={{ padding: 24 }}>
           <p>No channels or downstream sites selected — edit this experiment to pick the LinkedIn
-             accounts that were posting and the sites (EEC, Webinar, Compass…) to measure.</p>
+             accounts that were posting, the Kit account the campaign went out from, and the sites
+             (EEC, Webinar, Compass…) to measure.</p>
         </div>
       ) : impact.loading ? (
         <div className="spinner-wrap"><div className="spinner" /></div>
@@ -310,6 +327,27 @@ function ExperimentCard({ exp, dashboard, sites, channels, onEdit, onDelete }) {
                 <StatTile label="Engagements" emoji="💬" color={AWARENESS_COLOR}
                           before={aw.before.engagements} after={aw.after.engagements}
                           hint="likes + comments + reposts + clicks" />
+              </TileGroup>
+            )}
+            {chosenEmail.length > 0 && (
+              <TileGroup title="✉️ Email — Kit broadcasts" color={EMAIL_COLOR}
+                         note={!em.hasData ? 'no data yet — sync the Kit account in Settings' : null}>
+                <StatTile label="Emails sent" emoji="📨" color={EMAIL_COLOR}
+                          before={em.before.recipients} after={em.after.recipients}
+                          hint={`${em.after.broadcasts} broadcast${em.after.broadcasts === 1 ? '' : 's'} in the window`} />
+                <StatTile label="Opens" emoji="👀" color={EMAIL_COLOR}
+                          before={em.before.opens} after={em.after.opens}
+                          hint={em.after.recipients ? `${(em.after.opens / em.after.recipients * 100).toFixed(1)}% open rate` : null} />
+                <StatTile label="Link clicks" emoji="🖱" color={EMAIL_COLOR}
+                          before={em.before.clicks} after={em.after.clicks}
+                          hint={em.after.recipients ? `${(em.after.clicks / em.after.recipients * 100).toFixed(1)}% click rate` : null} />
+                <StatTile label="Unsubscribes" emoji="🚪" color={EMAIL_COLOR}
+                          before={em.before.unsubscribes} after={em.after.unsubscribes} />
+                {em.sequences.length > 0 && (
+                  <StatTile label="Entered a sequence" emoji="🚶" color={EMAIL_COLOR}
+                            before={em.before.entered} after={em.after.entered}
+                            hint="subscribers added to a sequence" />
+                )}
               </TileGroup>
             )}
             {chosenSites.map(s => {
@@ -356,6 +394,86 @@ function ExperimentCard({ exp, dashboard, sites, channels, onEdit, onDelete }) {
               </div>
             </details>
           )}
+
+          {(em.broadcasts.length > 0 || Object.keys(em.scopes).length > 0) && (
+            <details style={{ marginTop: 14 }}>
+              <summary style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--fg-2)' }}>
+                Email breakdown — {em.broadcasts.length} broadcast{em.broadcasts.length === 1 ? '' : 's'} in the window
+                {em.sequences.length > 0 && ` · ${em.sequences.length} sequence${em.sequences.length === 1 ? '' : 's'}`}
+              </summary>
+
+              {Object.keys(em.scopes).length > 0 && (
+                <div className="data-table-wrap" style={{ marginTop: 8 }}>
+                  <table className="data-table">
+                    <thead><tr><th>Channel</th><th style={{ textAlign: 'right' }}>Sent</th><th style={{ textAlign: 'right' }}>Opens</th><th style={{ textAlign: 'right' }}>Clicks</th><th style={{ textAlign: 'right' }}>Unsubs</th><th style={{ textAlign: 'right' }}>Entered</th></tr></thead>
+                    <tbody>
+                      {Object.entries(em.scopes).map(([k, s]) => (
+                        <tr key={k}>
+                          <td>{s.kind === 'broadcast' ? '📨 Broadcasts' : `🔁 ${s.name}`}</td>
+                          {['recipients', 'opens', 'clicks', 'unsubscribes', 'entered'].map(f => (
+                            <td key={f} style={{ textAlign: 'right' }}>
+                              {fmtNum(s.after[f])}
+                              <span style={{ color: 'var(--fg-4)', fontSize: 11 }}> · {fmtNum(s.before[f])} before</span>
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {em.sequences.map(seq => (
+                <div key={`${seq.integration_id}:${seq.sequence_id}`} style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-2)' }}>
+                    🔁 {seq.name}{seq.active ? '' : ' · paused'}
+                    <span style={{ fontWeight: 400, color: 'var(--fg-3)' }}>
+                      {' '}— {seq.email_count} email{seq.email_count === 1 ? '' : 's'}, {fmtNum(seq.subscriber_count)} subscribers · lifetime, per email
+                    </span>
+                  </div>
+                  {seq.emails.length > 0 && (
+                    <div className="data-table-wrap" style={{ marginTop: 6 }}>
+                      <table className="data-table">
+                        <thead><tr><th>#</th><th>Subject</th><th style={{ textAlign: 'right' }}>Sent</th><th style={{ textAlign: 'right' }}>Opens</th><th style={{ textAlign: 'right' }}>Clicks</th><th style={{ textAlign: 'right' }}>Unsubs</th></tr></thead>
+                        <tbody>
+                          {seq.emails.map(e => (
+                            <tr key={e.email_id}>
+                              <td>{e.position ?? '—'}</td>
+                              <td>{e.subject ?? '—'}{!e.published && <span style={{ color: 'var(--fg-3)' }}> · draft</span>}</td>
+                              <td style={{ textAlign: 'right' }}>{fmtNum(e.recipients)}</td>
+                              <td style={{ textAlign: 'right' }}>{fmtNum(e.opens)}{e.recipients ? <span style={{ color: 'var(--fg-4)', fontSize: 11 }}> · {(e.opens / e.recipients * 100).toFixed(0)}%</span> : null}</td>
+                              <td style={{ textAlign: 'right' }}>{fmtNum(e.clicks)}{e.recipients ? <span style={{ color: 'var(--fg-4)', fontSize: 11 }}> · {(e.clicks / e.recipients * 100).toFixed(1)}%</span> : null}</td>
+                              <td style={{ textAlign: 'right' }}>{fmtNum(e.unsubscribes)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {em.broadcasts.length > 0 && (
+              <div className="data-table-wrap" style={{ marginTop: 12 }}>
+                <table className="data-table">
+                  <thead><tr><th>Sent</th><th>Subject</th><th style={{ textAlign: 'right' }}>Recipients</th><th style={{ textAlign: 'right' }}>Opens</th><th style={{ textAlign: 'right' }}>Clicks</th><th style={{ textAlign: 'right' }}>Unsubs</th></tr></thead>
+                  <tbody>
+                    {em.broadcasts.map(b => (
+                      <tr key={b.broadcast_id}>
+                        <td>{formatDate(b.send_at?.slice(0, 10))}</td>
+                        <td>{b.subject ?? '—'}{b.status && b.status !== 'completed' ? <span style={{ color: 'var(--fg-3)' }}> · {b.status}</span> : null}</td>
+                        <td style={{ textAlign: 'right' }}>{(b.recipients ?? 0).toLocaleString()}</td>
+                        <td style={{ textAlign: 'right' }}>{(b.opens ?? 0).toLocaleString()}</td>
+                        <td style={{ textAlign: 'right' }}>{(b.clicks ?? 0).toLocaleString()}</td>
+                        <td style={{ textAlign: 'right' }}>{(b.unsubscribes ?? 0).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              )}
+            </details>
+          )}
         </>
       )}
 
@@ -395,7 +513,7 @@ function PillToggle({ active, color, onClick, children, title }) {
   )
 }
 
-function ExperimentForm({ initial, dashboards, sites, channels, onSave, onCancel }) {
+function ExperimentForm({ initial, dashboards, sites, channels, emailChannels = [], onSave, onCancel }) {
   const [name, setName]               = useState(initial?.name ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [hypothesis, setHypothesis]   = useState(initial?.hypothesis ?? '')
@@ -519,6 +637,28 @@ function ExperimentForm({ initial, dashboards, sites, channels, onSave, onCancel
         )}
       </div>
 
+      <div className="filter-group" style={{ marginBottom: 16 }}>
+        <label className="filter-label">
+          ✉️ Email — Kit account the campaign goes out from
+          <span style={{ fontWeight: 400, color: 'var(--fg-3)' }}> (emails sent, opens, clicks)</span>
+        </label>
+        {emailChannels.length === 0 ? (
+          <p style={{ fontSize: 13, color: 'var(--fg-3)' }}>
+            No Kit account connected yet — <Link to="/settings">connect one in Settings</Link>.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {emailChannels.map(c => (
+              <PillToggle key={c.id} color={EMAIL_COLOR} active={selChannels.includes(c.id)}
+                          onClick={() => toggle(selChannels, setSelChannels, c.id)}
+                          title={c.config?.account_name ?? c.label}>
+                ✉️ {c.label}{c.status === 'error' ? ' ⚠️' : ''}
+              </PillToggle>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="filter-group" style={{ marginBottom: 20 }}>
         <label className="filter-label">
           🌐 Downstream sites to measure
@@ -596,6 +736,7 @@ function OverallTab() {
   const { data: tagData, loading: tagsLoading } = useTagBreakdown({})
 
   const selectedDashboard = dashboards.find(d => d.id === scope)
+  const sequences = useEmailSequences()
   const need = useMemo(() => externalNeeds(selectedDashboard?.stages), [selectedDashboard])
   const external = useExternalDaily({ need })   // all time, every account / site
 
@@ -605,9 +746,9 @@ function OverallTab() {
     }
     if (!selectedDashboard) return []
     return resolveStageCounts(selectedDashboard.stages,
-                              { tagRows: tagData?.raw, linkedin: external.linkedin, ga4: external.ga4 })
-      .map(s => ({ stage: s, actual: s.count ?? 0, noData: s.noData, sourceLabel: describeStageSource(s) }))
-  }, [scope, metrics, selectedDashboard, tagData, external.linkedin, external.ga4])
+                              { tagRows: tagData?.raw, linkedin: external.linkedin, ga4: external.ga4, kit: external.kit })
+      .map(s => ({ stage: s, actual: s.count ?? 0, noData: s.noData, sourceLabel: describeStageSource(s, undefined, sequences) }))
+  }, [scope, metrics, selectedDashboard, tagData, external.linkedin, external.ga4, external.kit, sequences])
 
   const scopeTargets = targets[scope] ?? {}
 
@@ -732,8 +873,9 @@ function OverallTab() {
 function ExperimentsTab() {
   const { experiments, loading, createExperiment, updateExperiment, deleteExperiment } = useExperiments()
   const { dashboards } = useCustomDashboards()
-  const { linkedin, ga4 } = useIntegrations()
+  const { linkedin, ga4, kit } = useIntegrations()
   const sites = useMemo(() => mergeSites(ga4), [ga4])
+  const sequences = useEmailSequences()
   const [editing, setEditing] = useState(null)   // null | 'new' | experiment
 
   async function handleSave(payload) {
@@ -754,6 +896,8 @@ function ExperimentsTab() {
         dashboards={dashboards}
         sites={sites}
         channels={linkedin}
+        emailChannels={kit}
+        sequences={sequences}
         onSave={handleSave}
         onCancel={() => setEditing(null)}
       />
@@ -791,6 +935,8 @@ function ExperimentsTab() {
             dashboard={dashboards.find(d => d.id === x.dashboard_id)}
             sites={sites}
             channels={linkedin}
+        emailChannels={kit}
+        sequences={sequences}
             onEdit={() => setEditing(x)}
             onDelete={() => handleDelete(x)}
           />
@@ -810,7 +956,7 @@ export default function ExperimentsPage() {
     <div>
       <div className="page-header">
         <h1>🧪 Experiments</h1>
-        <p>Time-box a posting push, then see its impact on awareness, downstream sites and the lead funnel</p>
+        <p>Time-box a posting push or an email campaign, then see its impact on awareness, downstream sites and the lead funnel</p>
       </div>
 
       <div className="chart-toggle-group" style={{ marginBottom: 20 }}>

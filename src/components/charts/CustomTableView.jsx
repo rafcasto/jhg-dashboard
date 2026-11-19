@@ -12,7 +12,7 @@ import ExportButton from '../ExportButton'
  * filters: { startDate, endDate }  — scopes the export to the same window
  * namePrefix: string               — prepended to export filenames
  */
-export default function CustomTableView({ sites = [], stages, filters = {}, namePrefix = '' }) {
+export default function CustomTableView({ sites = [], sequences = [], stages, filters = {}, namePrefix = '' }) {
   if (!stages?.length) return <div className="empty-state"><p>No stages defined yet</p></div>
 
   const top = Math.max(1, stages[0]?.count ?? 0)
@@ -66,8 +66,8 @@ export default function CustomTableView({ sites = [], stages, filters = {}, name
                 <td style={{ ...td, textAlign: 'left' }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 360 }}>
                     {isExternal(s)
-                      ? <span className="metric-badge" title={describeStageSource(s, sites.find(x => x.key === s.site)?.label)}>
-                          {describeStageSource(s, sites.find(x => x.key === s.site)?.label)}
+                      ? <span className="metric-badge" title={describeStageSource(s, sites.find(x => x.key === s.site)?.label, sequences)}>
+                          {describeStageSource(s, sites.find(x => x.key === s.site)?.label, sequences)}
                           {s.noData ? ' · no data' : ''}
                         </span>
                       : (s.tags ?? []).length === 0

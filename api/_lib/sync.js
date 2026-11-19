@@ -1,7 +1,8 @@
-// Pulls fresh metrics from an integration into the awareness_* / site_daily tables.
+// Pulls fresh metrics from an integration into the awareness_* / site_daily / email_broadcasts tables.
 import { supabaseAdmin, HttpError, isoDay } from './admin.js'
 import { runDailyReport } from './ga4.js'
 import * as li from './linkedin.js'
+import * as kit from './kit.js'
 
 const DAY = 86400000
 
@@ -23,9 +24,9 @@ export async function syncIntegration(id, { days = 90 } = {}) {
   const start = new Date(end.getTime() - days * DAY)
 
   try {
-    const summary = integ.kind === 'ga4'
-      ? await syncGa4(integ, secrets, start, end)
-      : await syncLinkedin(integ, secrets, start, end)
+    const summary = integ.kind === 'ga4' ? await syncGa4(integ, secrets, start, end)
+                  : integ.kind === 'kit' ? await syncKit(integ, secrets, start, end)
+                  : await syncLinkedin(integ, secrets, start, end)
 
     await supabaseAdmin.from('integrations').update({
       status: 'connected', last_error: null,
@@ -66,6 +67,57 @@ async function syncGa4(integ, secrets, start, end) {
     if (error) throw new Error(error.message)
   }
   return { days: rows.length }
+}
+
+// ---------- Kit email ----------
+// Broadcast stats are lifetime numbers that keep moving for a while after the
+// send (late opens / clicks), so always refresh at least the last 90 days.
+async function syncKit(integ, secrets, start, end) {
+  if (!secrets.api_key) throw new Error('Kit API key is missing — edit this account in Settings')
+  const key   = secrets.api_key
+  const since = new Date(Math.min(start.getTime(), end.getTime() - 90 * DAY))
+  const now   = new Date().toISOString()
+  const today = isoDay(end)
+  const stamp = r => ({ ...r, integration_id: integ.id, fetched_at: now })
+  const must  = ({ error }) => { if (error) throw new Error(error.message) }
+
+  // Broadcasts — dated, so the send day is the attribution day
+  const rows = (await kit.broadcastStats(key, { since })).filter(kit.wasSent)
+  if (rows.length) {
+    must(await supabaseAdmin.from('email_broadcasts')
+      .upsert(rows.map(stamp), { onConflict: 'integration_id,broadcast_id' }))
+  }
+
+  // Sequences — lifetime totals only, so take a dated snapshot each sync;
+  // the email_sequence_deltas view turns consecutive snapshots into per-day numbers.
+  const seqs = await kit.sequences(key)
+  if (seqs.length) {
+    must(await supabaseAdmin.from('email_sequences')
+      .upsert(seqs.map(stamp), { onConflict: 'integration_id,sequence_id' }))
+    must(await supabaseAdmin.from('email_sequence_snapshots').upsert(
+      seqs.map(s => stamp({ sequence_id: s.sequence_id, date: today,
+                            recipients: s.recipients, opens: s.opens, clicks: s.clicks, unsubscribes: s.unsubscribes })),
+      { onConflict: 'integration_id,sequence_id,date' }))
+
+    for (const s of seqs) {
+      // Per-email breakdown (which nudge does the work)
+      const emails = await kit.sequenceEmails(key, s.sequence_id)
+      if (emails.length) {
+        must(await supabaseAdmin.from('email_sequence_emails')
+          .upsert(emails.map(stamp), { onConflict: 'integration_id,email_id' }))
+      }
+      // Who entered the sequence, per day — the one dated number Kit exposes.
+      // Recounted from scratch for the window so removals don't leave stale days.
+      const sinceDay = isoDay(since.getTime() - DAY)
+      const byDay = await kit.sequenceEntriesByDay(key, s.sequence_id, sinceDay)
+      must(await supabaseAdmin.from('email_sequence_entries').delete()
+        .eq('integration_id', integ.id).eq('sequence_id', s.sequence_id).gte('date', sinceDay))
+      const entries = Object.entries(byDay).map(([date, entered]) => stamp({ sequence_id: s.sequence_id, date, entered }))
+      if (entries.length) must(await supabaseAdmin.from('email_sequence_entries').insert(entries))
+    }
+  }
+
+  return { broadcasts: rows.length, sequences: seqs.length }
 }
 
 // ---------- LinkedIn ----------
