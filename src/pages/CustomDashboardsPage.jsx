@@ -3,9 +3,9 @@ import { useCustomDashboards } from '../hooks/useCustomDashboards'
 import { useTagBreakdown } from '../hooks/useTagBreakdown'
 import { useIntegrations } from '../hooks/useIntegrations'
 import { useExternalDaily } from '../hooks/useExternalDaily'
-import { useEmailSequences } from '../hooks/useEmailSequences'
+import { useEmailCatalog } from '../hooks/useEmailCatalog'
 import { mergeSites } from '../constants/sites'
-import { STAGE_SOURCES, LINKEDIN_METRICS, GA4_METRICS, KIT_METRICS, DEFAULT_METRIC, EMAIL_SCOPE_BROADCASTS, stageSource } from '../constants/stageSources'
+import { STAGE_SOURCES, LINKEDIN_METRICS, GA4_METRICS, KIT_METRICS, DEFAULT_METRIC, EMAIL_SCOPE, seqScope, bcScope, stageSource } from '../constants/stageSources'
 import { resolveStageCounts, externalNeeds } from '../lib/stageCounts'
 import CustomFunnelChart from '../components/charts/CustomFunnelChart'
 import CustomBarChart   from '../components/charts/CustomBarChart'
@@ -98,14 +98,14 @@ function TagPicker({ allTags, selected, onChange }) {
 }
 
 // ---- What a stage counts: tags, a LinkedIn metric, a Kit email metric, or a GA4 metric ----
-function SourceControls({ stage, allTags, sites, sequences, onChange }) {
+function SourceControls({ stage, allTags, sites, emailCatalog, onChange }) {
   const source = stageSource(stage)
 
   function setSource(next) {
     if (next === source) return
     onChange(next === 'tags'
       ? { source: 'tags', tags: stage.tags ?? [], metric: undefined, site: undefined }
-      : { source: next, metric: DEFAULT_METRIC[next], site: undefined, sequence: undefined })
+      : { source: next, metric: DEFAULT_METRIC[next], site: undefined, email: undefined })
   }
 
   return (
@@ -148,15 +148,29 @@ function SourceControls({ stage, allTags, sites, sequences, onChange }) {
           </div>
           <div className="filter-group">
             <label className="filter-label">Email</label>
-            <select className="filter-select" value={stage.sequence ?? ''}
-                    onChange={e => onChange({ sequence: e.target.value || undefined })}>
+            <select className="filter-select" value={stage.email ?? ''} style={{ maxWidth: 340 }}
+                    onChange={e => onChange({ email: e.target.value || undefined })}>
               <option value="">All email (broadcasts + sequences)</option>
-              <option value={EMAIL_SCOPE_BROADCASTS}>📨 Broadcasts only</option>
-              {sequences.map(s => (
-                <option key={`${s.integration_id}:${s.sequence_id}`} value={s.sequence_id}>
-                  🔁 {s.name}{s.active ? '' : ' · paused'}
-                </option>
-              ))}
+              <option value={EMAIL_SCOPE.BROADCASTS}>📨 All broadcasts</option>
+              <option value={EMAIL_SCOPE.SEQUENCES}>🔁 All sequences</option>
+              {emailCatalog.sequences.length > 0 && (
+                <optgroup label="One sequence">
+                  {emailCatalog.sequences.map(s => (
+                    <option key={`${s.integration_id}:${s.sequence_id}`} value={seqScope(s.sequence_id)}>
+                      🔁 {s.name}{s.active ? '' : ' · paused'}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {emailCatalog.broadcasts.length > 0 && (
+                <optgroup label="One broadcast (newest first)">
+                  {emailCatalog.broadcasts.map(b => (
+                    <option key={`${b.integration_id}:${b.broadcast_id}`} value={bcScope(b.broadcast_id)}>
+                      📨 {b.send_at?.slice(0, 10)} · {b.subject ?? b.broadcast_id}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
         </>
@@ -188,7 +202,7 @@ function SourceControls({ stage, allTags, sites, sequences, onChange }) {
 }
 
 // ---- Builder form (create / edit) ----
-function DashboardBuilder({ initial, allTags, sites, sequences, onSave, onCancel }) {
+function DashboardBuilder({ initial, allTags, sites, emailCatalog, onSave, onCancel }) {
   const [name, setName]               = useState(initial?.name ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [stages, setStages]           = useState(
@@ -224,7 +238,7 @@ function DashboardBuilder({ initial, allTags, sites, sequences, onSave, onCancel
         if (source === 'tags') return { ...base, tags: s.tags ?? [] }
         const out = { ...base, metric: s.metric ?? DEFAULT_METRIC[source] }
         if (source === 'ga4' && s.site)     out.site     = s.site
-        if (source === 'kit' && s.sequence) out.sequence = s.sequence
+        if (source === 'kit' && s.email)    out.email    = s.email
         return out
       })
     if (valid.length < 2) { setError('Add at least 2 stages with labels.'); return }
@@ -300,7 +314,7 @@ function DashboardBuilder({ initial, allTags, sites, sequences, onSave, onCancel
               </div>
             </div>
 
-            <SourceControls stage={stage} allTags={allTags} sites={sites} sequences={sequences}
+            <SourceControls stage={stage} allTags={allTags} sites={sites} emailCatalog={emailCatalog}
                             onChange={patch => setStage(idx, patch)} />
 
             <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', alignSelf: 'center' }}>
@@ -318,7 +332,7 @@ function DashboardBuilder({ initial, allTags, sites, sequences, onSave, onCancel
       <p style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 10 }}>
         <strong>Lead tags</strong> count leads created in the period. <strong>LinkedIn</strong>,{' '}
         <strong>Kit email</strong> and <strong>Google Analytics</strong> stages sum the metric over the same period (a Kit stage can
-        read all email, broadcasts only, or one sequence) — inside an
+        read all email, all broadcasts, all sequences, one sequence or one broadcast) — inside an
         experiment that's the posting window, across the accounts and sites the experiment selects;
         on this page it's every connected account and site.
       </p>
@@ -350,7 +364,7 @@ export default function CustomDashboardsPage() {
   const [filters, setFilters]       = useState({ startDate: '', endDate: '' })
 
   const sites = useMemo(() => mergeSites(ga4), [ga4])
-  const sequences = useEmailSequences()
+  const emailCatalog = useEmailCatalog()
 
   // All tags + counts (also drives the stage counts for the selected range)
   const { data: tagData, loading: tagsLoading } = useTagBreakdown({
@@ -415,7 +429,7 @@ export default function CustomDashboardsPage() {
           initial={editing === 'new' ? null : editing}
           allTags={allTags}
           sites={sites}
-          sequences={sequences}
+          emailCatalog={emailCatalog}
           onSave={handleSave}
           onCancel={() => setEditing(null)}
         />
@@ -514,7 +528,7 @@ export default function CustomDashboardsPage() {
                   <CustomTableView
                     stages={stagesWithCounts}
                     sites={sites}
-                    sequences={sequences}
+                    emailCatalog={emailCatalog}
                     filters={filters}
                     namePrefix={selected.name}
                   />

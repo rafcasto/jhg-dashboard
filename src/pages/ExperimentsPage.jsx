@@ -11,7 +11,7 @@ import { useFunnelMetrics } from '../hooks/useFunnelMetrics'
 import { useTagBreakdown } from '../hooks/useTagBreakdown'
 import { useCustomDashboards } from '../hooks/useCustomDashboards'
 import { useExternalDaily } from '../hooks/useExternalDaily'
-import { useEmailSequences } from '../hooks/useEmailSequences'
+import { useEmailCatalog } from '../hooks/useEmailCatalog'
 import { resolveStageCounts, externalNeeds } from '../lib/stageCounts'
 import { isExternal, describeStageSource } from '../constants/stageSources'
 import { formatDate, daysBetween, experimentWindow, pctChange, fmtNum } from '../lib/experimentWindow'
@@ -197,7 +197,7 @@ function impactAsExternal(impact, win) {
 // ============================================================
 // One experiment card: posting window → awareness / email → downstream → funnel
 // ============================================================
-function ExperimentCard({ exp, dashboard, sites, channels, emailChannels = [], sequences = [], onEdit, onDelete }) {
+function ExperimentCard({ exp, dashboard, sites, channels, emailChannels = [], emailCatalog = {}, onEdit, onDelete }) {
   const impact = useExperimentImpact(exp)
   const { aarrr, tagRows, baseTagRows, loading } = useExperimentActuals(exp, dashboard)
   const status = experimentStatus(exp)
@@ -209,9 +209,9 @@ function ExperimentCard({ exp, dashboard, sites, channels, emailChannels = [], s
     const before = resolveStageCounts(dashboard.stages, { tagRows: baseTagRows,  ...impactAsExternal(impact, 'before') })
     return after.map((s, i) => ({
       stage: s, actual: s.count ?? 0, before: before[i]?.count ?? 0, noData: s.noData,
-      sourceLabel: describeStageSource(s, sites.find(x => x.key === s.site)?.label, sequences),
+      sourceLabel: describeStageSource(s, sites.find(x => x.key === s.site)?.label, emailCatalog),
     }))
-  }, [exp.dashboard_id, dashboard, aarrr, tagRows, baseTagRows, impact.awareness, impact.email, impact.sites, sites, sequences])
+  }, [exp.dashboard_id, dashboard, aarrr, tagRows, baseTagRows, impact.awareness, impact.email, impact.sites, sites, emailCatalog])
   const st = STATUS_STYLE[status]
 
   const chosenChannels = channels.filter(c => (exp.channels ?? []).includes(c.id))
@@ -407,9 +407,9 @@ function ExperimentCard({ exp, dashboard, sites, channels, emailChannels = [], s
                   <table className="data-table">
                     <thead><tr><th>Channel</th><th style={{ textAlign: 'right' }}>Sent</th><th style={{ textAlign: 'right' }}>Opens</th><th style={{ textAlign: 'right' }}>Clicks</th><th style={{ textAlign: 'right' }}>Unsubs</th><th style={{ textAlign: 'right' }}>Entered</th></tr></thead>
                     <tbody>
-                      {Object.entries(em.scopes).map(([k, s]) => (
+                      {Object.entries(em.scopes).filter(([, s]) => s.kind === 'broadcasts' || s.kind === 'sequence').map(([k, s]) => (
                         <tr key={k}>
-                          <td>{s.kind === 'broadcast' ? '📨 Broadcasts' : `🔁 ${s.name}`}</td>
+                          <td>{s.kind === 'broadcasts' ? '📨 All broadcasts' : `🔁 ${s.name}`}</td>
                           {['recipients', 'opens', 'clicks', 'unsubscribes', 'entered'].map(f => (
                             <td key={f} style={{ textAlign: 'right' }}>
                               {fmtNum(s.after[f])}
@@ -736,7 +736,7 @@ function OverallTab() {
   const { data: tagData, loading: tagsLoading } = useTagBreakdown({})
 
   const selectedDashboard = dashboards.find(d => d.id === scope)
-  const sequences = useEmailSequences()
+  const emailCatalog = useEmailCatalog()
   const need = useMemo(() => externalNeeds(selectedDashboard?.stages), [selectedDashboard])
   const external = useExternalDaily({ need })   // all time, every account / site
 
@@ -747,8 +747,8 @@ function OverallTab() {
     if (!selectedDashboard) return []
     return resolveStageCounts(selectedDashboard.stages,
                               { tagRows: tagData?.raw, linkedin: external.linkedin, ga4: external.ga4, kit: external.kit })
-      .map(s => ({ stage: s, actual: s.count ?? 0, noData: s.noData, sourceLabel: describeStageSource(s, undefined, sequences) }))
-  }, [scope, metrics, selectedDashboard, tagData, external.linkedin, external.ga4, external.kit, sequences])
+      .map(s => ({ stage: s, actual: s.count ?? 0, noData: s.noData, sourceLabel: describeStageSource(s, undefined, emailCatalog) }))
+  }, [scope, metrics, selectedDashboard, tagData, external.linkedin, external.ga4, external.kit, emailCatalog])
 
   const scopeTargets = targets[scope] ?? {}
 
@@ -875,7 +875,7 @@ function ExperimentsTab() {
   const { dashboards } = useCustomDashboards()
   const { linkedin, ga4, kit } = useIntegrations()
   const sites = useMemo(() => mergeSites(ga4), [ga4])
-  const sequences = useEmailSequences()
+  const emailCatalog = useEmailCatalog()
   const [editing, setEditing] = useState(null)   // null | 'new' | experiment
 
   async function handleSave(payload) {
@@ -897,7 +897,7 @@ function ExperimentsTab() {
         sites={sites}
         channels={linkedin}
         emailChannels={kit}
-        sequences={sequences}
+        emailCatalog={emailCatalog}
         onSave={handleSave}
         onCancel={() => setEditing(null)}
       />
@@ -936,7 +936,7 @@ function ExperimentsTab() {
             sites={sites}
             channels={linkedin}
         emailChannels={kit}
-        sequences={sequences}
+        emailCatalog={emailCatalog}
             onEdit={() => setEditing(x)}
             onDelete={() => handleDelete(x)}
           />

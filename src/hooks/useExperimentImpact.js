@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { experimentWindow, fillDays, sumRange, pctChange } from '../lib/experimentWindow'
-import { LINKEDIN_METRICS, GA4_METRICS, KIT_METRICS, EMAIL_SCOPE_BROADCASTS } from '../constants/stageSources'
+import { LINKEDIN_METRICS, GA4_METRICS, KIT_METRICS, EMAIL_SCOPE, emailRowScopes } from '../constants/stageSources'
 
 const LI_FIELDS = LINKEDIN_METRICS.map(m => m.key)
 const GA_FIELDS = GA4_METRICS.map(m => m.key)
@@ -16,7 +16,7 @@ const NONE = Promise.resolve({ data: [] })
  *   days:      ['YYYY-MM-DD', …]                       baseline start → posting end
  *   awareness: { daily: [{date, posts, impressions, engagements, likes, …}], before, after, posts: [...] }
  *   email:     { daily: [{date, broadcasts, recipients, opens, clicks, unsubscribes, entered}], before, after,
- *                scopes: { broadcasts: {name, daily, before, after}, [sequence_id]: {…} },
+ *                scopes: { broadcasts | sequences | 'seq:<id>' | 'bc:<id>' → {name, kind, daily, before, after} },
  *                broadcasts: [...sent in the window], sequences: [{…lifetime, emails: [...]}] }
  *   sites:     { [site_key]: { daily: [{date, sessions, total_users, new_users, page_views, …}], before, after, hasData } }
  *
@@ -57,7 +57,7 @@ export function useExperimentImpact(exp) {
               .in('site_key', sites).gte('date', win.baseStart).lte('date', win.postEnd)
           : NONE,
         channels.length
-          ? supabase.from('email_daily').select(`integration_id,channel,sequence_id,date,${EM_FIELDS.join(',')}`)
+          ? supabase.from('email_daily').select(`integration_id,channel,broadcast_id,sequence_id,date,${EM_FIELDS.join(',')}`)
               .in('integration_id', channels).gte('date', win.baseStart).lte('date', win.postEnd)
           : NONE,
         channels.length
@@ -119,16 +119,18 @@ export function useExperimentImpact(exp) {
     const emAfter  = emSum(emDaily, win.postStart, win.postEnd)
 
     const seqName = Object.fromEntries(raw.sequences.map(s => [s.sequence_id, s.name]))
+    const bcName  = Object.fromEntries(raw.broadcasts.map(b => [b.broadcast_id, b.subject ?? b.broadcast_id]))
+    const scopeMeta = k =>
+      k === EMAIL_SCOPE.BROADCASTS ? { name: 'All broadcasts', kind: 'broadcasts' }
+      : k === EMAIL_SCOPE.SEQUENCES ? { name: 'All sequences',  kind: 'sequences' }
+      : k.startsWith('seq:')        ? { name: seqName[k.slice(4)] ?? 'Sequence', kind: 'sequence' }
+      :                               { name: bcName[k.slice(3)]  ?? 'Broadcast', kind: 'broadcast' }
     const byScope = {}
-    for (const r of raw.emailDaily) {
-      const k = r.channel === 'broadcast' ? EMAIL_SCOPE_BROADCASTS : r.sequence_id
-      if (k) (byScope[k] ??= []).push(r)
-    }
+    for (const r of raw.emailDaily) for (const k of emailRowScopes(r)) (byScope[k] ??= []).push(r)
     const scopes = Object.fromEntries(Object.entries(byScope).map(([k, rows]) => {
       const daily = emDailyOf(rows)
       return [k, {
-        name: k === EMAIL_SCOPE_BROADCASTS ? 'Broadcasts' : (seqName[k] ?? 'Sequence'),
-        kind: k === EMAIL_SCOPE_BROADCASTS ? 'broadcast' : 'sequence',
+        ...scopeMeta(k),
         hasData: true, daily,
         before: emSum(daily, win.baseStart, win.baseEnd),
         after:  emSum(daily, win.postStart, win.postEnd),

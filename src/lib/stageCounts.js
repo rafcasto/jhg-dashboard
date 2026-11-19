@@ -6,7 +6,7 @@
 //   linkedin: { hasData, totals: { impressions, … } }       summed over the window
 //   ga4:      { [siteKey]: { hasData, totals: { sessions, … } } }
 //   kit:      { hasData, totals: { recipients, opens, clicks, … },     all Kit email
-//               scopes: { broadcasts: {…}, [sequence_id]: {…} } }      narrowed by stage.sequence
+//               scopes: { broadcasts, sequences, 'seq:<id>', 'bc:<id>' } }  narrowed by stage.email
 // })
 // → stages with `count` and `noData` (true when an external stage's
 //   source had no rows at all for the window — a 0 that means "unknown").
@@ -31,7 +31,7 @@ export function resolveStageCounts(stages, { tagRows, linkedin, ga4, kit } = {})
     }
 
     if (source === 'kit') {
-      const pool = st.sequence ? kit?.scopes?.[st.sequence] : kit
+      const pool = st.email ? kit?.scopes?.[st.email] : kit
       const n = Number(pool?.totals?.[st.metric] ?? 0)
       return { ...st, count: n, noData: !pool?.hasData }
     }
