@@ -87,10 +87,19 @@ async function syncKit(integ, secrets, start, end) {
     must(await supabaseAdmin.from('email_broadcasts')
       .upsert(rows.map(stamp), { onConflict: 'integration_id,broadcast_id' }))
   }
+  // Anything in the refreshed window that Kit no longer returns (archived /
+  // deleted / reverted to draft) is gone from the dashboard too.
+  await pruneMissing('email_broadcasts', integ.id, 'broadcast_id', rows.map(r => r.broadcast_id),
+                     q => q.gte('send_at', since.toISOString()))
 
   // Sequences — lifetime totals only, so take a dated snapshot each sync;
   // the email_sequence_deltas view turns consecutive snapshots into per-day numbers.
   const seqs = await kit.sequences(key)
+  // Archived / deleted sequences: drop the sequence and every table keyed on it.
+  const keepSeq = seqs.map(s => s.sequence_id)
+  for (const t of ['email_sequences', 'email_sequence_emails', 'email_sequence_snapshots', 'email_sequence_entries']) {
+    await pruneMissing(t, integ.id, 'sequence_id', keepSeq)
+  }
   if (seqs.length) {
     must(await supabaseAdmin.from('email_sequences')
       .upsert(seqs.map(stamp), { onConflict: 'integration_id,sequence_id' }))
@@ -106,6 +115,8 @@ async function syncKit(integ, secrets, start, end) {
         must(await supabaseAdmin.from('email_sequence_emails')
           .upsert(emails.map(stamp), { onConflict: 'integration_id,email_id' }))
       }
+      await pruneMissing('email_sequence_emails', integ.id, 'email_id', emails.map(e => e.email_id),
+                         q => q.eq('sequence_id', s.sequence_id))
       // Who entered the sequence, per day — the one dated number Kit exposes.
       // Recounted from scratch for the window so removals don't leave stale days.
       const sinceDay = isoDay(since.getTime() - DAY)
@@ -118,6 +129,25 @@ async function syncKit(integ, secrets, start, end) {
   }
 
   return { broadcasts: rows.length, sequences: seqs.length }
+}
+
+/**
+ * Delete rows of `table` for this integration whose `col` is NOT in `keep`
+ * (optionally narrowed by `scope`). Reads the ids first so the delete is a
+ * plain `in (...)` — avoids a giant NOT IN in the query string.
+ */
+async function pruneMissing(table, integrationId, col, keep, scope = q => q) {
+  const { data, error } = await scope(
+    supabaseAdmin.from(table).select(col).eq('integration_id', integrationId))
+  if (error) throw new Error(error.message)
+  const keepSet = new Set(keep.map(String))
+  const stale = [...new Set((data ?? []).map(r => String(r[col])))].filter(id => !keepSet.has(id))
+  for (let i = 0; i < stale.length; i += 200) {
+    const { error: dErr } = await supabaseAdmin.from(table).delete()
+      .eq('integration_id', integrationId).in(col, stale.slice(i, i + 200))
+    if (dErr) throw new Error(dErr.message)
+  }
+  return stale.length
 }
 
 // ---------- LinkedIn ----------
