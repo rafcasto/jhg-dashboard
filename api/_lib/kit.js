@@ -50,7 +50,7 @@ export async function verifyKey(apiKey) {
 export async function broadcastStats(apiKey, { since } = {}) {
   const list = await paginate(apiKey, '/broadcasts/stats',
     { sent_after: since ? new Date(since).toISOString() : undefined }, 'broadcasts')
-  return list.map(b => {
+  return list.filter(notArchived).map(b => {
     const s = b.stats ?? {}
     return {
       broadcast_id: String(b.id),
@@ -65,6 +65,9 @@ export async function broadcastStats(apiKey, { since } = {}) {
   })
 }
 
+/** Kit normally omits archived items from list endpoints; if it ever flags them instead, skip them. */
+const notArchived = x => !x.archived && !x.archived_at
+
 /** Only broadcasts that actually went out count towards "emails sent". */
 export const wasSent = b => !!b.send_at && b.status !== 'draft' && b.status !== 'scheduled'
 
@@ -73,7 +76,7 @@ export const wasSent = b => !!b.send_at && b.status !== 'draft' && b.status !== 
 /** All sequences with lifetime stats (GET /v4/sequences?include=stats). */
 export async function sequences(apiKey) {
   const list = await paginate(apiKey, '/sequences', { include: 'stats' }, 'sequences')
-  return list.map(s => {
+  return list.filter(notArchived).map(s => {
     const st = s.stats ?? {}
     return {
       sequence_id:      String(s.id),
